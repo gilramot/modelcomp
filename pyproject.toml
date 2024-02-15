@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "modelcomp"
+version = "0.0.1a1"
+authors = [
+    { name = "Gil Ramot", email = "gilramot3@gmail.com" }
+]
+maintainers = [
+    { name = "Gil Ramot", email = "gilramot3@gmail.com" }
+]
+description = "Compare between performances of machine learning models with ease."
+readme = "README.md"
+requires-python = ">=3.6"
+license = {file = "LICENSE"}
+classifiers = [
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.6",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "matplotlib",
+    "numpy",
+    "pandas",
+    "scikit-learn",
+    "shap",
+    "xgboost",
+    "seaborn"
+]
+
+[project.urls]
+Repository = "https://github.com/gilramot/modelcomp"
+Issues = "https://github.com/gilramot/modelcomp/issues"
+Appendix = "https://github.com/gilramot/modelcomp-appendix"
