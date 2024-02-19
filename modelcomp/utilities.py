@@ -158,7 +158,6 @@ def filter_data(abundance, meta, control, disease_list=list(), disease1='', dise
 def remove_rare_species(df, prevalence_cutoff=0.1, avg_abundance_cutoff=0.005):
     filt_df = df.drop('SampleID', axis=1) if 'SampleID' in df.columns else df
     n_samples = df.shape[0]
-    n_taxa_before_filter = df.shape[1]
 
     # Prevalence calculations (number of non-zero values per feature)
     frequencies = (filt_df > 0).sum(axis=0) / n_samples
