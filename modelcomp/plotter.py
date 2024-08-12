@@ -16,8 +16,8 @@ def individual_plots(save_to_unjoined):
     """
     save_to = mc.join_save(os.path.join(save_to_unjoined, 'plots'))
     model_name, trained_on, tested_on = mc.filename_to_data(save_to)
-    trained_on = 'all diseases' if trained_on == 'a' else trained_on
-    tested_on = 'all diseases' if tested_on == 'a' else tested_on
+    trained_on = 'all labels' if trained_on == 'a' else trained_on
+    tested_on = 'all labels' if tested_on == 'a' else tested_on
     title_start = f'{model_name} (trained on {trained_on}, tested on {tested_on}) - '
     interp_tpr, fprs, tprs, interp_recall, precisions, recalls, aucs, pr_aucs, feature_importances, shap_values = mc.read_data(
         save_to_unjoined)
@@ -135,7 +135,7 @@ def individual_plots(save_to_unjoined):
 def general_plots(positive_uniques):
     """
     Plots comparing the models' performances
-    :param positive_uniques: The positive diseases' IDs in the input data
+    :param positive_uniques: The positive labels' IDs in the input data
     :return: Plots exported to the filesystem (default: "export/GENERAL PLOTS")
     """
     save_to = mc.join_save('GENERAL PLOTS')

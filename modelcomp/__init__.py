@@ -24,7 +24,7 @@ from modelcomp.utilities import (
     get_k_fold,
     get_models,
     filter_data,
-    remove_rare_species,
+    remove_rare_features,
     remove_string_columns,
     make_dir,
     join_save,

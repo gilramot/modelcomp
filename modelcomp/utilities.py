@@ -138,26 +138,43 @@ def get_models(seed_all=None, seed_dict=None):
     ]
 
 
-def filter_data(abundance, meta, control, disease_list=list(), disease1='', disease2=''):
-    df_filtered_meta = meta.loc[meta['PatientGroup'].isin(disease_list + [control] + [disease1] + [disease2])]
+def filter_data(abundance, meta, control, labels=list(), label1='', label2=''):
+    """
+    Filters DataFrame by labels, and assigns a numeric value for each label
+    :param abundance: A DataFrame that stores the features
+    :param meta: A DataFrame that stores the target variable
+    :param control: The control group label (will be set to 0)
+    :param labels: A label list that are positive and will be set to 1 (optional)
+    :param label1: A label that will be set to 1 (optional)
+    :param label2:  A label that will be set to 2 (optional)
+    :return: A new abundance DataFrame with the filtered samples and a new meta DataFrame with the filtered labels
+    """
+    df_filtered_meta = meta.loc[meta['PatientGroup'].isin(labels + [control] + [label1] + [label2])]
     # filtering meta by parameters
     df_filtered_abundance = abundance.loc[abundance['SampleID'].isin(df_filtered_meta['SampleID'])]
     # filtering abundance by columns that are in filtered meta (SampleID)
     df_new_filtered_meta = df_filtered_meta.copy()
-    if len(disease_list) != 0:
+    if len(labels) != 0:
         df_new_filtered_meta['PatientGroup'] = df_new_filtered_meta['PatientGroup'].apply(
             lambda x: 0 if x == control else 1)
         # mapping falsy values to 0 and truthy values to 1
     else:
         df_new_filtered_meta['PatientGroup'] = df_new_filtered_meta['PatientGroup'].apply(
-            lambda x: 0 if x == control else 1 if x == disease1 else 2)
-        # mapping values to 0/1/2 based on diseases
+            lambda x: 0 if x == control else 1 if x == label1 else 2)
+        # mapping values to 0/1/2 based on labels
     df_new_filtered_meta['PatientGroup'] = df_new_filtered_meta['PatientGroup'].astype(int)
     # ensure the column is of integer type
     return df_filtered_abundance, df_new_filtered_meta
 
 
-def remove_rare_species(df, prevalence_cutoff=0.1, avg_abundance_cutoff=0.005):
+def remove_rare_features(df, prevalence_cutoff=0.1, avg_abundance_cutoff=0.005):
+    """
+    Remove rare features from a DataFrame
+    :param df: The input DataFrame
+    :param prevalence_cutoff: All features that are less prevalent than this cutoff will be removed (optional, default: 0.1)
+    :param avg_abundance_cutoff: All features that have a lower average abundance than this cutoff will be removed (optional, default: 0.005)
+    :return: The DataFrame with features removed
+    """
     filt_df = df.drop('SampleID', axis=1) if 'SampleID' in df.columns else df
     n_samples = df.shape[0]
 
@@ -174,10 +191,19 @@ def remove_rare_species(df, prevalence_cutoff=0.1, avg_abundance_cutoff=0.005):
 
 
 def remove_string_columns(df):
+    """
+    Remove the column 'SampleID' from the DataFrame
+    :param df: The input DataFrame
+    :return: The input DataFrame with the column 'SampleID' removed
+    """
     return df.drop('SampleID', axis=1, errors='ignore')
 
 
 def make_dir(directory):
+    """
+    Creates a subdirectory, if one doesn't exist
+    :param directory: The directory that needs to be added
+    """
     if not os.path.exists(directory):
         os.makedirs(directory)
 
@@ -190,7 +216,7 @@ def join_save(add=None):
 def data_to_filename(test_class, model_name, trained_on=None):
     test_class = 'A' if type(test_class) is list else test_class
     trained_on = 'A' if type(trained_on) is list else trained_on
-    # mapping test and train classes to all disease if they are more than 1 disease
+    # mapping test and train classes to all label if they are more than 1 label
     return os.path.join(test_class,
                         trained_on if trained_on is not None else test_class,
                         model_name)
