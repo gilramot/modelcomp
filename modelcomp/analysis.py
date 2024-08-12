@@ -6,8 +6,9 @@ from sklearn.metrics import roc_curve, precision_recall_curve
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
+from sklearn.ensemble import VotingClassifier
 
-import modelcomp as mcp
+import modelcomp as mc
 
 
 def get_fprtpr(model, X, y, pos_num):
@@ -62,7 +63,7 @@ def std_validation_models(models, X_train, X_test, y_train, y_test, tested_on, t
         X_train_temp, X_test_temp = X_train, X_test
         interp_tpr, interp_recall, aucs, pr_aucs = None, None, None, None
         feature_importances, shap_values = None, None
-        save_to_unjoined = mcp.data_to_filename(tested_on, mcp.model_names[model_index],
+        save_to_unjoined = mc.data_to_filename(tested_on, mc.model_names[model_index],
                                                 trained_on=trained_on)
         # in-loop init
         if validate:
@@ -86,18 +87,18 @@ def std_validation_models(models, X_train, X_test, y_train, y_test, tested_on, t
             pr_aucs.append(metrics.auc(recall, precision))
             # pr curve variables
         if explain:
-            feature_importances = pd.DataFrame(mcp.get_feature_importance(model).T, index=feature_names,
+            feature_importances = pd.DataFrame(mc.get_feature_importance(model).T, index=feature_names,
                                                columns=['Importance']) if type(
                 model) is not KNeighborsClassifier else None
             # feature importance
             shap_values = (shap.explainers.Permutation(model.predict, X_test, max_evals=1000).shap_values(X_test))
             # shap values
-        mcp.write_data(save_to_unjoined, feature_names, interp_tpr, interp_recall, aucs, pr_aucs,
+        mc.write_data(save_to_unjoined, feature_names, interp_tpr, interp_recall, aucs, pr_aucs,
                        feature_importances=feature_importances, shap_values=shap_values)
         # exporting data
         X_train, X_test = X_train_temp, X_test_temp
         if plot:
-            mcp.individual_plots(save_to_unjoined)
+            mc.individual_plots(save_to_unjoined)
         # plotting data
 
 
@@ -158,7 +159,7 @@ def cross_val_models(models, validation_model, X, y, positive_label, feature_nam
                 # pr curve variables
                 if explain:
                     feature_importances_per_fold.append(
-                        pd.DataFrame(mcp.get_feature_importance(model).T, index=feature_names,
+                        pd.DataFrame(mc.get_feature_importance(model).T, index=feature_names,
                                      columns=['Importance']) if type(model) is not KNeighborsClassifier else None)
                     if feature_importances_per_fold[0] is None:
                         feature_importances = None
@@ -177,14 +178,14 @@ def cross_val_models(models, validation_model, X, y, positive_label, feature_nam
                         shap_values = np.append(shap_values, shap_values_temp, axis=0)
                     # shap values
                 X[train], X[test] = X_train_temp, X_test_temp
-            mcp.write_data(
-                mcp.data_to_filename(positive_label, mcp.model_names[model_index]),
+            mc.write_data(
+                mc.data_to_filename(positive_label, mc.model_names[model_index]),
                 feature_names,
                 interp_tpr_per_fold, interp_recall_per_fold, aucs, pr_aucs, fprs=fprs, tprs=tprs,
                 precisions=precisions, recalls=recalls, feature_importances=feature_importances,
                 shap_values=shap_values)
             # exporting data
         if plot:
-            mcp.individual_plots(
-                mcp.data_to_filename(positive_label, mcp.model_names[model_index]))
+            mc.individual_plots(
+                mc.data_to_filename(positive_label, mc.model_names[model_index]))
         # plotting data

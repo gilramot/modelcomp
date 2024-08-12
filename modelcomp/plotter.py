@@ -177,12 +177,12 @@ def general_plots(positive_uniques):
     max_auc = max_auc.loc[max_auc.groupby(['Train Data', 'Test Data'])['AUC'].idxmax()]
     max_auc = max_auc.pivot(index='Train Data', columns='Test Data', values='AUC')
 
-    sns.heatmap(max_auc, cmap='viridis', vmin=0.4, vmax=1)
+    sns.heatmap(max_auc, cmap=sns.color_palette("coolwarm_r", as_cmap=True), vmin=0.4, vmax=1)
     for i, col in enumerate(max_auc.columns):
         for j, row in enumerate(max_auc.columns):
-            plt.annotate(str(round(max_auc_annot[row][col], 2) if max_auc_annot[row][col] != 0 else 'NaN'),
+            plt.annotate('NaN',
                          xy=(j + 0.5, i + 0.5),
-                         ha='center', va='center', color='white' if max_auc_annot[row][col] != 0 else 'black')
+                         ha='center', va='center', color='black') if max_auc_annot[row][col] == 0 else None
     plt.title('AUCs of most accurate model for each train/test data')
     mc.write_plot(save_to, 'correlation_heatmap_auc')
 
@@ -193,11 +193,10 @@ def general_plots(positive_uniques):
     sns.heatmap(max_auc.replace(order_by[::-1], list(range(1, 6))), cbar=False, cmap='tab10')
     for i, col in enumerate(max_auc.columns):
         for j, row in enumerate(max_auc.columns):
-            plt.annotate(
-                (mc.model_names_dict[max_auc[row][col]] if not str(
-                    max_auc[row][col]) == 'nan' else 'N/A'),
+            plt.annotate('N/A',
                 xy=(j + 0.5, i + 0.5),
-                ha='center', va='center', color='white' if not str(max_auc[row][col]) == 'nan' else 'black')
+                ha='center', va='center', color='black') if str(
+                    max_auc[row][col]) == 'nan' else None
     plt.title('Most accurate model for each train/test data (AUC)')
     mc.write_plot(save_to, 'correlation_heatmap_models_auc')
 
@@ -243,12 +242,7 @@ def general_plots(positive_uniques):
     max_pr_auc = max_pr_auc.loc[max_pr_auc.groupby(['Train Data', 'Test Data'])['PR AUC'].idxmax()]
     max_pr_auc = max_pr_auc.pivot(index='Train Data', columns='Test Data', values='PR AUC')
 
-    sns.heatmap(max_pr_auc, cmap='viridis', vmin=0.4, vmax=1)
-    for i, col in enumerate(max_pr_auc.columns):
-        for j, row in enumerate(max_pr_auc.columns):
-            plt.annotate(str(round(max_pr_auc_annot[row][col], 2) if max_pr_auc_annot[row][col] != 0 else 'NaN'),
-                         xy=(j + 0.5, i + 0.5),
-                         ha='center', va='center', color='white' if max_pr_auc_annot[row][col] != 0 else 'black')
+    sns.heatmap(max_pr_auc, cmap=sns.color_palette("coolwarm_r", as_cmap=True), vmin=0.4, vmax=1)
     plt.title('PR AUCs of most accurate model for each train/test data')
     mc.write_plot(save_to, 'correlation_heatmap_pr_auc')
 
@@ -257,12 +251,5 @@ def general_plots(positive_uniques):
     max_pr_auc = max_pr_auc.loc[max_pr_auc.groupby(['Train Data', 'Test Data'])['PR AUC'].idxmax()]
     max_pr_auc = max_pr_auc.drop('PR AUC', axis=1).pivot(index='Train Data', columns='Test Data', values='Model')
     sns.heatmap(max_pr_auc.replace(order_by[::-1], list(range(1, 6))), cbar=False, cmap='tab10')
-    for i, col in enumerate(max_pr_auc.columns):
-        for j, row in enumerate(max_pr_auc.columns):
-            plt.annotate(
-                (mc.model_names_dict[max_pr_auc[row][col]] if not str(
-                    max_pr_auc[row][col]) == 'nan' else 'N/A'),
-                xy=(j + 0.5, i + 0.5),
-                ha='center', va='center', color='white' if not str(max_pr_auc[row][col]) == 'nan' else 'black')
     plt.title('Most accurate model for each train/test data (PR AUC)')
     mc.write_plot(save_to, 'correlation_heatmap_models_pr_auc')

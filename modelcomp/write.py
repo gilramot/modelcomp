@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-import modelcomp as mcp
+import modelcomp as mc
 
 
 def write_data(save_to_unjoined, label=None, interp_tpr=None, interp_recall=None, aucs=None, pr_aucs=None, fprs=None,
@@ -27,7 +27,7 @@ def write_data(save_to_unjoined, label=None, interp_tpr=None, interp_recall=None
     :return: data exported to the filesystem (default: "export/<train label>/<test label>/<model name>/data")
     """
     save_to = os.path.join('export', save_to_unjoined, 'data')
-    mcp.make_dir(save_to)
+    mc.make_dir(save_to)
     if interp_tpr is not None:
         for index, value in enumerate([interp_tpr] if type(interp_tpr) is np.ndarray else interp_tpr):
             np.savetxt(os.path.join(save_to, 'interp_tpr' + str(index) + '.csv'), value, delimiter=',')
@@ -70,7 +70,7 @@ def write_plot(save_to, img_name):
     :return: the current plt state exported to the filesystem
     """
     dir = save_to
-    mcp.make_dir(dir)
+    mc.make_dir(dir)
     plt.savefig(os.path.join(dir, img_name + '.png'), bbox_inches='tight')
     # saving plot
     plt.clf()
