@@ -195,20 +195,6 @@ def data_to_filename(test_class, model_name, trained_on=None):
 
 
 def filename_to_data(filename):
-    cwd = os.getcwd()
-    os.chdir(filename)
-    os.chdir('..')
+    splits = filename.rsplit('\\', 4)
 
-    model_name = os.path.basename(os.getcwd())
-    # getting the model name by directory
-    os.chdir('..')
-
-    trained_on = os.path.basename(os.getcwd())
-    # getting the train class by directory
-    os.chdir('..')
-
-    tested_on = os.path.basename(os.getcwd())
-    # getting the test class by directory
-
-    os.chdir(cwd)
-    return model_name, str(trained_on).lower(), str(tested_on).lower()
+    return splits[-2], splits[-3].lower(), splits[-4].lower()
