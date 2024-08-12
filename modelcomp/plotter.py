@@ -10,7 +10,16 @@ import modelcomp as mc
 __all__ = ["individual_plots", "general_plots"]
 
 
-def individual_plots(save_to_unjoined):
+def individual_plots(
+    save_to_unjoined,
+    accuracies=None,
+    interp_tpr=None,
+    interp_recall=None,
+    aucs=None,
+    pr_aucs=None,
+    feature_importances=None,
+    shap_values=None,
+):
     """
     Plot the performance of a single model
     :param save_to_unjoined: Location to save the plots to
@@ -25,19 +34,6 @@ def individual_plots(save_to_unjoined):
         if not trained_on == "multiclass"
         else "(multiclass) - "
     )
-    (
-        _,
-        interp_tpr,
-        fprs,
-        tprs,
-        interp_recall,
-        precisions,
-        recalls,
-        aucs,
-        pr_aucs,
-        feature_importances,
-        shap_values,
-    ) = mc.read.read_data(save_to_unjoined)
     mean_fpr = np.linspace(0, 1, 100)
     mean_tpr = np.mean(interp_tpr, axis=0)
     mean_tpr[-1] = 1.0
