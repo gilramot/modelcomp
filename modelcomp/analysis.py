@@ -130,6 +130,199 @@ def get_explainers(model, X_test, feature_names):
     # shap values
     return feature_importances, shap_values
 
+def std_validation_ensemble_models(
+    models,
+    X_train,
+    X_test,
+    y_train,
+    y_test,
+    tested_on,
+    trained_on,
+    feature_names,
+    validate=True,
+    explain=True,
+    plot=True,
+    write=False,
+):
+    voting_models = []
+    weights = []
+    for model_index, model in enumerate(models):
+        model_name = model.__class__.__name__
+        accuracies, _, _, _, _, _, _, aucs, pr_aucs, _, _ = mc.read.read_data(
+            mc.utilities.data_to_filename(tested_on, model_name, trained_on)
+        )
+        weight = get_weight(accuracies.max(), aucs.max(), pr_aucs.max())
+        voting_models.append((model_name, model))
+        weights.append(weight)
+    soft_ensemble_model = VotingClassifier(
+        estimators=voting_models, voting="soft", weights=weights
+    )
+    weighted_ensemble_model = VotingClassifier(estimators=voting_models, voting="soft")
+    model_results = []
+    for ensemble_model_index, ensemble_model in enumerate(
+        [soft_ensemble_model, weighted_ensemble_model]
+    ):
+        X_train, X_test = scale_train_and_test(X_train, X_test)
+        ensemble_model_name = ensemble_model.__class__.__name__
+        interp_tpr, interp_recall = None, None
+        accuracies = None
+        aucs = None
+        pr_aucs = None
+        feature_importances, shap_values = None, None
+        if validate:
+            accuracies = []
+            aucs = []
+            pr_aucs = []
+            ensemble_model.fit(X_train, y_train)
+            accuracy, interp_tpr, auc, interp_recall, pr_auc = get_accuracy_metrics(
+                ensemble_model, X_test, y_test
+            )
+            accuracies.append(accuracy)
+            aucs.append(auc)
+            pr_aucs.append(pr_auc)
+            # obtaining accuracy metrics
+        if explain:
+            feature_importances, shap_values = get_explainers(
+                ensemble_model, X_test, feature_names
+            )
+        if write:
+            mc.write.write_data(
+                mc.utilities.data_to_filename(
+                    tested_on, ensemble_model_name, trained_on
+                ),
+                accuracies,
+                interp_tpr,
+                interp_recall,
+                aucs,
+                pr_aucs,
+                feature_importances=feature_importances,
+                shap_values=shap_values,
+                label=feature_names,
+            )
+        if plot:
+            mc.plotter.individual_plots(
+                mc.utilities.data_to_filename(
+                    tested_on, ensemble_model_name, trained_on
+                ),
+                accuracies=accuracies,
+                interp_tpr=interp_tpr,
+                interp_recall=interp_recall,
+                aucs=aucs,
+                pr_aucs=pr_aucs,
+                feature_importances=feature_importances,
+                shap_values=shap_values,
+            )
+        model_results.append(
+            [
+                accuracies,
+                interp_tpr,
+                interp_recall,
+                aucs,
+                pr_aucs,
+                feature_importances,
+                shap_values,
+            ]
+        )
+    return model_results
+
+
+def cross_val_enesmble_models(
+    models,
+    splits,
+    X,
+    y,
+    tested_on,
+    feature_names,
+    validate=True,
+    explain=True,
+    plot=True,
+    write=False,
+):
+    voting_models = []
+    weights = []
+    for model_index, model in enumerate(models):
+        weight = 0
+        model_name = model.__class__.__name__
+        for fold in range(len(splits)):
+            accuracies, _, _, _, _, _, _, aucs, pr_aucs, _, _ = mc.read.read_data(
+                mc.utilities.data_to_filename(tested_on, model_name)
+            )
+            weight = weight + get_weight(
+                accuracies[fold], aucs[fold], pr_aucs[fold]
+            ) / len(splits)
+        voting_models.append((model_name, model))
+        weights.append(weight)
+    unweighted_ensemble_model = VotingClassifier(
+        estimators=voting_models, voting="soft", weights=weights
+    )
+    weighted_ensemble_model = VotingClassifier(estimators=voting_models, voting="soft")
+    model_results = []
+    if validate:
+        for ensemble_model_index, ensemble_model in tqdm(
+            enumerate([unweighted_ensemble_model, weighted_ensemble_model]),
+            desc="Ensemble Model",
+        ):
+            ensemble_model_name = ensemble_model.__class__.__name__
+            shap_values = None
+            interp_tpr_per_fold = []
+            accuracies = []
+            aucs = []
+            interp_recall_per_fold = []
+            pr_aucs = []
+            for split_index, (train, test) in splits:
+                X[train], X[test] = scale_train_and_test(X[train], X[test])
+                ensemble_model.fit(X[train], y[train])
+                accuracy, interp_tpr, auc, interp_recall, pr_auc = get_accuracy_metrics(
+                    ensemble_model, X[test], y[test]
+                )
+                accuracies.append(accuracy)
+                interp_tpr_per_fold.append(interp_tpr)
+                aucs.append(auc)
+                interp_recall_per_fold.append(interp_recall)
+                pr_aucs.append(pr_auc)
+                # obtaining accuracy metrics
+            if explain:
+                _, shap_values_temp = get_explainers(
+                    ensemble_model, X[test], feature_names
+                )
+                if shap_values is None:
+                    shap_values = shap_values_temp
+                else:
+                    shap_values = np.append(shap_values, shap_values_temp, axis=0)
+            # shap values
+            if write:
+                mc.write.write_data(
+                    mc.utilities.data_to_filename(tested_on, ensemble_model_name),
+                    accuracies,
+                    interp_tpr_per_fold,
+                    interp_recall_per_fold,
+                    aucs,
+                    pr_aucs,
+                    shap_values=shap_values,
+                    label=feature_names,
+                )
+            if plot:
+                mc.plotter.individual_plots(
+                    mc.utilities.data_to_filename(tested_on, ensemble_model_name),
+                    accuracies=accuracies,
+                    interp_tpr=interp_tpr_per_fold,
+                    interp_recall=interp_recall_per_fold,
+                    aucs=aucs,
+                    pr_aucs=pr_aucs,
+                    shap_values=shap_values,
+                )
+            model_results.append(
+                [
+                    accuracies,
+                    interp_tpr_per_fold,
+                    interp_recall_per_fold,
+                    aucs,
+                    pr_aucs,
+                    shap_values,
+                ]
+            )
+        return model_results
+
 def std_validation_models(
     models,
     X_train,
