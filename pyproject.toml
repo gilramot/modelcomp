@@ -34,7 +34,8 @@ dependencies = [
     'pandas',
     'scikit-learn',
     'shap',
-    'seaborn'
+    'seaborn',
+
 ]
 
 [project.urls]

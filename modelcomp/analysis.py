@@ -9,7 +9,7 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 import modelcomp as mc
-
+from tqdm import tqdm
 
 __all__ = [
     "cross_val_models",
@@ -143,6 +143,7 @@ def std_validation_ensemble_models(
     validate=True,
     explain=True,
     plot=True,
+    write=False,
 ):
     voting_models = []
     weights = []
@@ -158,6 +159,7 @@ def std_validation_ensemble_models(
         estimators=voting_models, voting="soft", weights=weights
     )
     weighted_ensemble_model = VotingClassifier(estimators=voting_models, voting="soft")
+    model_results = []
     for ensemble_model_index, ensemble_model in enumerate(
         [soft_ensemble_model, weighted_ensemble_model]
     ):
@@ -184,23 +186,38 @@ def std_validation_ensemble_models(
             feature_importances, shap_values = get_explainers(
                 ensemble_model, X_test, feature_names
             )
-        mc.write.write_data(
-            mc.utilities.data_to_filename(tested_on, ensemble_model_name, trained_on),
-            accuracies,
-            interp_tpr,
-            interp_recall,
-            aucs,
-            pr_aucs,
-            feature_importances=feature_importances,
-            shap_values=shap_values,
-            label=feature_names,
-        )
+        if write:
+            mc.write.write_data(
+                mc.utilities.data_to_filename(
+                    tested_on, ensemble_model_name, trained_on
+                ),
+                accuracies,
+                interp_tpr,
+                interp_recall,
+                aucs,
+                pr_aucs,
+                feature_importances=feature_importances,
+                shap_values=shap_values,
+                label=feature_names,
+            )
         if plot:
             mc.plotter.individual_plots(
                 mc.utilities.data_to_filename(
                     tested_on, ensemble_model_name, trained_on
                 )
             )
+        model_results.append(
+            [
+                accuracies,
+                interp_tpr,
+                interp_recall,
+                aucs,
+                pr_aucs,
+                feature_importances,
+                shap_values,
+            ]
+        )
+    return model_results
 
 
 def cross_val_enesmble_models(
@@ -213,6 +230,7 @@ def cross_val_enesmble_models(
     validate=True,
     explain=True,
     plot=True,
+    write=False,
 ):
     voting_models = []
     weights = []
@@ -232,10 +250,11 @@ def cross_val_enesmble_models(
         estimators=voting_models, voting="soft", weights=weights
     )
     weighted_ensemble_model = VotingClassifier(estimators=voting_models, voting="soft")
+    model_results = []
     if validate:
-        for ensemble_model_index, ensemble_model in enumerate(
+        for ensemble_model_index, ensemble_model in tqdm(enumerate(
             [unweighted_ensemble_model, weighted_ensemble_model]
-        ):
+        ), desc='Ensemble Model'):
             ensemble_model_name = ensemble_model.__class__.__name__
             shap_values = None
             interp_tpr_per_fold = []
@@ -264,20 +283,32 @@ def cross_val_enesmble_models(
                 else:
                     shap_values = np.append(shap_values, shap_values_temp, axis=0)
             # shap values
-            mc.write.write_data(
-                mc.utilities.data_to_filename(tested_on, ensemble_model_name),
-                accuracies,
-                interp_tpr_per_fold,
-                interp_recall_per_fold,
-                aucs,
-                pr_aucs,
-                shap_values=shap_values,
-                label=feature_names,
-            )
+            if write:
+                mc.write.write_data(
+                    mc.utilities.data_to_filename(tested_on, ensemble_model_name),
+                    accuracies,
+                    interp_tpr_per_fold,
+                    interp_recall_per_fold,
+                    aucs,
+                    pr_aucs,
+                    shap_values=shap_values,
+                    label=feature_names,
+                )
             if plot:
                 mc.plotter.individual_plots(
                     mc.utilities.data_to_filename(tested_on, ensemble_model_name)
                 )
+            model_results.append(
+                [
+                    accuracies,
+                    interp_tpr_per_fold,
+                    interp_recall_per_fold,
+                    aucs,
+                    pr_aucs,
+                    shap_values,
+                ]
+            )
+        return model_results
 
 
 def std_validation_models(
@@ -291,8 +322,8 @@ def std_validation_models(
     feature_names,
     validate=True,
     explain=True,
+    write=False,
     plot=True,
-    ensemble=False,
 ):
     """
     Standard validation of models (used when the positive class label differs between the training and testing data)
@@ -306,8 +337,8 @@ def std_validation_models(
     :param feature_names: List of feature names
     :param validate: Validate the models (default: True)
     :param explain: Explain the models (default: True)
+    :param write: Write the results to the filesystem (default: False)
     :param plot: Plot the results (default: True)
-    :param ensemble: Test ensemble models (default: False)
     :return: Model results, exported to the filesystem (default: 'export')
     """
     X_train, X_test, y_train, y_test = (
@@ -317,6 +348,7 @@ def std_validation_models(
         y_test.to_numpy().ravel(),
     )
     # init
+    model_results = []
     for model_index, model in enumerate(models):
         X_train_temp, X_test_temp = X_train, X_test
         interp_tpr, interp_recall, aucs, pr_aucs, accuracies = (
@@ -351,36 +383,36 @@ def std_validation_models(
                 feature_importances, shap_values = get_explainers(
                     model, X_test, feature_names
                 )
-        mc.write.write_data(
-            save_to_unjoined,
-            accuracies,
-            interp_tpr,
-            interp_recall,
-            aucs,
-            pr_aucs,
-            feature_importances=feature_importances,
-            shap_values=shap_values,
-            label=feature_names,
-        )
-        # exporting data
+        if write:
+            mc.write.write_data(
+                save_to_unjoined,
+                accuracies,
+                interp_tpr,
+                interp_recall,
+                aucs,
+                pr_aucs,
+                feature_importances=feature_importances,
+                shap_values=shap_values,
+                label=feature_names,
+            )
+            # exporting data
         X_train, X_test = X_train_temp, X_test_temp
         if plot:
             mc.plotter.individual_plots(save_to_unjoined)
         # plotting data
-    if ensemble:
-        std_validation_ensemble_models(
-            models,
-            X_train,
-            X_test,
-            y_train,
-            y_test,
-            tested_on,
-            trained_on,
-            feature_names,
-            validate=validate,
-            explain=explain,
-            plot=plot,
+        model_results.append(
+            [
+                model.__class__.__name__,
+                accuracies,
+                interp_tpr,
+                interp_recall,
+                aucs,
+                pr_aucs,
+                feature_importances,
+                shap_values,
+            ]
         )
+    return model_results
 
 
 def cross_val_models(
@@ -393,7 +425,7 @@ def cross_val_models(
     validate=True,
     explain=True,
     plot=True,
-    ensemble=False,
+    write=False,
 ):
     """
     Cross validation of multiple models
@@ -406,12 +438,13 @@ def cross_val_models(
     :param validate: Validate the models (default: True)
     :param explain: Explain the models (default: True)
     :param plot: Plot the results (default: True)
-    :param ensemble: Test ensemble models (default: False)
+    :param write: Write the results to the filesystem (default: False)
     :return: Model results, exported to the filesystem (default: 'export')
     """
     splits = list(enumerate(validation_model.split(X, y)))
     # init
-    for model_index, model in enumerate(models):
+    model_results = []
+    for model_index, model in tqdm(enumerate(models), desc='Model'):
         feature_importances, shap_values = None, None
         if validate:
             feature_importances_per_fold = []
@@ -464,32 +497,34 @@ def cross_val_models(
                         shap_values = np.append(shap_values, shap_values_temp, axis=0)
                     # shap values
                 X[train], X[test] = X_train_temp, X_test_temp
-            mc.write.write_data(
-                mc.utilities.data_to_filename(positive_label, model.__class__.__name__),
-                accuracies,
-                interp_tpr_per_fold,
-                interp_recall_per_fold,
-                aucs,
-                pr_aucs,
-                feature_importances=feature_importances,
-                shap_values=shap_values,
-                label=feature_names,
+            if write:
+                mc.write.write_data(
+                    mc.utilities.data_to_filename(
+                        positive_label, model.__class__.__name__
+                    ),
+                    accuracies,
+                    interp_tpr_per_fold,
+                    interp_recall_per_fold,
+                    aucs,
+                    pr_aucs,
+                    feature_importances=feature_importances,
+                    shap_values=shap_values,
+                    label=feature_names,
+                )
+                # exporting data
+            model_results.append(
+                 [
+                    accuracies,
+                    interp_tpr_per_fold,
+                    interp_recall_per_fold,
+                    aucs,
+                    pr_aucs,
+                    feature_importances,
+                    shap_values,
+                ]
             )
-            # exporting data
         if plot:
             mc.plotter.individual_plots(
                 mc.utilities.data_to_filename(positive_label, model.__class__.__name__)
             )
         # plotting data
-    if ensemble:
-        cross_val_enesmble_models(
-            models,
-            splits,
-            X,
-            y,
-            positive_label,
-            feature_names,
-            validate=validate,
-            explain=explain,
-            plot=plot,
-        )

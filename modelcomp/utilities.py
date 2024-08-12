@@ -60,7 +60,7 @@ def split_array(arr, test_size=0.2, seed=None):
     :param seed: the shuffle seed (optional)
     :return: the split array (train data, test data)
     """
-    random.shuffle(arr) if seed == None else random.Random(seed).shuffle(arr)
+    random.shuffle(arr) if seed is None else random.Random(seed).shuffle(arr)
     return arr[: int(len(arr) * (1 - test_size))], arr[int(0 - len(arr) * test_size) :]
     # returns a split of a df
 
