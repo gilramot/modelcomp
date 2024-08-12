@@ -11,6 +11,14 @@ from sklearn.svm import SVC
 import modelcomp as mc
 
 
+__all__ = [
+    "cross_val_models",
+    "std_validation_models",
+    "get_fprtprauc",
+    "get_pr",
+]
+
+
 def get_weight(accuracy, auc, pr_auc):
     weight = max(auc - 0.5, 0) + max(pr_auc - 0.5, 0) + max(accuracy - 0.5, 0)
     return 1 if weight == 0 else weight
@@ -107,7 +115,7 @@ def get_accuracy_metrics(model, X_test, y_test):
 def get_explainers(model, X_test, feature_names):
     feature_importances = (
         pd.DataFrame(
-            mc.get_feature_importance(model).T,
+            mc.utilities.get_feature_importance(model).T,
             index=feature_names,
             columns=["Importance"],
         )
@@ -140,8 +148,8 @@ def std_validation_ensemble_models(
     weights = []
     for model_index, model in enumerate(models):
         model_name = model.__class__.__name__
-        accuracies, _, _, _, _, _, _, aucs, pr_aucs, _, _ = mc.read_data(
-            mc.data_to_filename(tested_on, model_name, trained_on)
+        accuracies, _, _, _, _, _, _, aucs, pr_aucs, _, _ = mc.read.read_data(
+            mc.utilities.data_to_filename(tested_on, model_name, trained_on)
         )
         weight = get_weight(accuracies.max(), aucs.max(), pr_aucs.max())
         voting_models.append((model_name, model))
@@ -176,8 +184,8 @@ def std_validation_ensemble_models(
             feature_importances, shap_values = get_explainers(
                 ensemble_model, X_test, feature_names
             )
-        mc.write_data(
-            mc.data_to_filename(tested_on, ensemble_model_name, trained_on),
+        mc.write.write_data(
+            mc.utilities.data_to_filename(tested_on, ensemble_model_name, trained_on),
             accuracies,
             interp_tpr,
             interp_recall,
@@ -188,8 +196,10 @@ def std_validation_ensemble_models(
             label=feature_names,
         )
         if plot:
-            mc.individual_plots(
-                mc.data_to_filename(tested_on, ensemble_model_name, trained_on)
+            mc.plotter.individual_plots(
+                mc.utilities.data_to_filename(
+                    tested_on, ensemble_model_name, trained_on
+                )
             )
 
 
@@ -210,8 +220,8 @@ def cross_val_enesmble_models(
         weight = 0
         model_name = model.__class__.__name__
         for fold in range(len(splits)):
-            accuracies, _, _, _, _, _, _, aucs, pr_aucs, _, _ = mc.read_data(
-                mc.data_to_filename(tested_on, model_name)
+            accuracies, _, _, _, _, _, _, aucs, pr_aucs, _, _ = mc.read.read_data(
+                mc.utilities.data_to_filename(tested_on, model_name)
             )
             weight = weight + get_weight(
                 accuracies[fold], aucs[fold], pr_aucs[fold]
@@ -254,8 +264,8 @@ def cross_val_enesmble_models(
                 else:
                     shap_values = np.append(shap_values, shap_values_temp, axis=0)
             # shap values
-            mc.write_data(
-                mc.data_to_filename(tested_on, ensemble_model_name),
+            mc.write.write_data(
+                mc.utilities.data_to_filename(tested_on, ensemble_model_name),
                 accuracies,
                 interp_tpr_per_fold,
                 interp_recall_per_fold,
@@ -265,7 +275,9 @@ def cross_val_enesmble_models(
                 label=feature_names,
             )
             if plot:
-                mc.individual_plots(mc.data_to_filename(tested_on, ensemble_model_name))
+                mc.plotter.individual_plots(
+                    mc.utilities.data_to_filename(tested_on, ensemble_model_name)
+                )
 
 
 def std_validation_models(
@@ -315,7 +327,7 @@ def std_validation_models(
             None,
         )
         feature_importances, shap_values = None, None
-        save_to_unjoined = mc.data_to_filename(
+        save_to_unjoined = mc.utilities.data_to_filename(
             tested_on, model.__class__.__name__, trained_on=trained_on
         )
         # in-loop init
@@ -339,7 +351,7 @@ def std_validation_models(
                 feature_importances, shap_values = get_explainers(
                     model, X_test, feature_names
                 )
-        mc.write_data(
+        mc.write.write_data(
             save_to_unjoined,
             accuracies,
             interp_tpr,
@@ -353,7 +365,7 @@ def std_validation_models(
         # exporting data
         X_train, X_test = X_train_temp, X_test_temp
         if plot:
-            mc.individual_plots(save_to_unjoined)
+            mc.plotter.individual_plots(save_to_unjoined)
         # plotting data
     if ensemble:
         std_validation_ensemble_models(
@@ -452,8 +464,8 @@ def cross_val_models(
                         shap_values = np.append(shap_values, shap_values_temp, axis=0)
                     # shap values
                 X[train], X[test] = X_train_temp, X_test_temp
-            mc.write_data(
-                mc.data_to_filename(positive_label, model.__class__.__name__),
+            mc.write.write_data(
+                mc.utilities.data_to_filename(positive_label, model.__class__.__name__),
                 accuracies,
                 interp_tpr_per_fold,
                 interp_recall_per_fold,
@@ -465,8 +477,8 @@ def cross_val_models(
             )
             # exporting data
         if plot:
-            mc.individual_plots(
-                mc.data_to_filename(positive_label, model.__class__.__name__)
+            mc.plotter.individual_plots(
+                mc.utilities.data_to_filename(positive_label, model.__class__.__name__)
             )
         # plotting data
     if ensemble:

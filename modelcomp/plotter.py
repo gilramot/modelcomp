@@ -7,6 +7,8 @@ import seaborn as sns
 
 import modelcomp as mc
 
+__all__ = ["individual_plots", "general_plots"]
+
 
 def individual_plots(save_to_unjoined):
     """
@@ -14,8 +16,8 @@ def individual_plots(save_to_unjoined):
     :param save_to_unjoined: Location to save the plots to
     :return: Plots showing the performance of a single model, exported to the filesystem (default: 'export/<train label>/<test label>/<model name>/plots')
     """
-    save_to = mc.join_save(os.path.join(save_to_unjoined, "plots"))
-    trained_on, tested_on, model_name = mc.filename_to_data(save_to)
+    save_to = mc.utilities.join_save(os.path.join(save_to_unjoined, "plots"))
+    trained_on, tested_on, model_name = mc.utilities.filename_to_data(save_to)
     trained_on = "all labels" if trained_on == "a" else trained_on
     tested_on = "all labels" if tested_on == "a" else tested_on
     title_start = f"{model_name} " + (
@@ -35,7 +37,7 @@ def individual_plots(save_to_unjoined):
         pr_aucs,
         feature_importances,
         shap_values,
-    ) = mc.read_data(save_to_unjoined)
+    ) = mc.read.read_data(save_to_unjoined)
     mean_fpr = np.linspace(0, 1, 100)
     mean_tpr = np.mean(interp_tpr, axis=0)
     mean_tpr[-1] = 1.0
@@ -81,7 +83,7 @@ def individual_plots(save_to_unjoined):
     plt.legend(loc="lower right")
     # legend location
 
-    mc.write_plot(save_to, "roc")
+    mc.write.write_plot(save_to, "roc")
     # saving plot
 
     mean_recall = np.mean(interp_recall, axis=0)
@@ -123,7 +125,7 @@ def individual_plots(save_to_unjoined):
     plt.legend(loc="lower left")
     # legend location
 
-    mc.write_plot(save_to, "precision-recall")
+    mc.write.write_plot(save_to, "precision-recall")
     # saving plot
 
     if feature_importances is not None:
@@ -134,7 +136,7 @@ def individual_plots(save_to_unjoined):
         plt.xlabel("Importance")
         plt.ylabel("Feature")
         plt.title(f"{title_start} Feature Importance")
-        mc.write_plot(save_to, "feature_importance")
+        mc.write.write_plot(save_to, "feature_importance")
     # plotting feature importance
     if shap_values is not None:
         important_features = shap_values[:20]
@@ -143,7 +145,7 @@ def individual_plots(save_to_unjoined):
         plt.xlabel("Impact on model output")
         plt.ylabel("Feature")
         plt.title(f"{title_start} SHAP Values")
-        mc.write_plot(save_to, "shap_values")
+        mc.write.write_plot(save_to, "shap_values")
     # plotting shap values
 
 
@@ -153,14 +155,16 @@ def general_plots(positive_uniques):
     :param positive_uniques: The positive diseases' IDs in the input data
     :return: Plots exported to the filesystem (default: 'export/GENERAL PLOTS')
     """
-    model_names = mc.join_save(os.path.join("A", "A")).listdir()
-    save_to = mc.join_save("GENERAL PLOTS")
-    mc.make_dir(save_to)
+    model_names = mc.utilities.join_save(os.path.join("A", "A")).listdir()
+    save_to = mc.utilities.join_save("GENERAL PLOTS")
+    mc.utilities.make_dir(save_to)
     model_aucs = []
     for (model_name,) in model_names:
         mean_auc = np.mean(
             np.genfromtxt(
-                mc.join_save(os.path.join("A", "A", model_name, "data", "aucs.csv"))
+                mc.utilities.join_save(
+                    os.path.join("A", "A", model_name, "data", "aucs.csv")
+                )
             )
         )
         model_aucs.append([model_name, mean_auc, "A", "A", True])
@@ -169,7 +173,7 @@ def general_plots(positive_uniques):
             for model_name in model_names:
                 mean_auc = np.mean(
                     np.genfromtxt(
-                        mc.join_save(
+                        mc.utilities.join_save(
                             os.path.join(
                                 trained_on, tested_on, model_name, "data", "aucs.csv"
                             )
@@ -214,7 +218,7 @@ def general_plots(positive_uniques):
     )
     plt.xticks(fontsize=8)
     plt.title("Model comparison (AUC)")
-    mc.write_plot(save_to, "model_comparison_auc")
+    mc.write.write_plot(save_to, "model_comparison_auc")
     np.savetxt(
         os.path.join(save_to, "average_model_aucs.csv"),
         np.array([model_names, average_model_aucs]),
@@ -253,7 +257,7 @@ def general_plots(positive_uniques):
                 color="white" if max_auc_annot[row][col] != 0 else "black",
             )
     plt.title("AUCs of most accurate model for each train/test data")
-    mc.write_plot(save_to, "correlation_heatmap_auc")
+    mc.write.write_plot(save_to, "correlation_heatmap_auc")
 
     max_auc = model_aucs_df[["Train Data", "Test Data", "Model", "AUC"]].copy().dropna()
     max_auc = max_auc.loc[max_auc["Train Data"] != "A"].loc[max_auc["Test Data"] != "A"]
@@ -276,13 +280,15 @@ def general_plots(positive_uniques):
                 color="white" if not str(max_auc[row][col]) == "nan" else "black",
             )
     plt.title("Most accurate model for each train/test data (AUC)")
-    mc.write_plot(save_to, "correlation_heatmap_models_auc")
+    mc.write.write_plot(save_to, "correlation_heatmap_models_auc")
 
     model_pr_aucs = []
     for model_name, model_name_short in model_names:
         mean_pr_auc = np.mean(
             np.genfromtxt(
-                mc.join_save(os.path.join("A", "A", model_name, "data", "pr_aucs.csv"))
+                mc.utilities.join_save(
+                    os.path.join("A", "A", model_name, "data", "pr_aucs.csv")
+                )
             )
         )
         model_pr_aucs.append([model_name_short, mean_pr_auc, "A", "A", True])
@@ -291,7 +297,7 @@ def general_plots(positive_uniques):
             for model_name, model_name_short in model_names:
                 mean_pr_auc = np.mean(
                     np.genfromtxt(
-                        mc.join_save(
+                        mc.utilities.join_save(
                             os.path.join(
                                 trained_on, tested_on, model_name, "data", "pr_aucs.csv"
                             )
@@ -338,7 +344,7 @@ def general_plots(positive_uniques):
     )
     plt.xticks(fontsize=8)
     plt.title("Model comparison (PR AUC)")
-    mc.write_plot(save_to, "model_comparison_pr_auc")
+    mc.write.write_plot(save_to, "model_comparison_pr_auc")
     np.savetxt(
         os.path.join(save_to, "average_model_pr_aucs.csv"),
         np.array([model_names, average_model_pr_aucs]),
@@ -385,7 +391,7 @@ def general_plots(positive_uniques):
                 color="white" if max_pr_auc_annot[row][col] != 0 else "black",
             )
     plt.title("PR AUCs of most accurate model for each train/test data")
-    mc.write_plot(save_to, "correlation_heatmap_pr_auc")
+    mc.write.write_plot(save_to, "correlation_heatmap_pr_auc")
 
     max_pr_auc = (
         model_pr_aucs_df[["Train Data", "Test Data", "Model", "PR AUC"]].copy().dropna()
@@ -418,13 +424,13 @@ def general_plots(positive_uniques):
                 color="white" if not str(max_pr_auc[row][col]) == "nan" else "black",
             )
     plt.title("Most accurate model for each train/test data (PR AUC)")
-    mc.write_plot(save_to, "correlation_heatmap_models_pr_auc")
+    mc.write.write_plot(save_to, "correlation_heatmap_models_pr_auc")
 
     model_accuracies = []
     for model_name, model_name_short in model_names:
         mean_auc = np.mean(
             np.genfromtxt(
-                mc.join_save(
+                mc.utilities.join_save(
                     os.path.join("A", "A", model_name, "data", "accuracies.csv")
                 )
             )
@@ -435,7 +441,7 @@ def general_plots(positive_uniques):
             for model_name, model_name_short in model_names:
                 mean_auc = np.mean(
                     np.genfromtxt(
-                        mc.join_save(
+                        mc.utilities.join_save(
                             os.path.join(
                                 trained_on,
                                 tested_on,
@@ -488,7 +494,7 @@ def general_plots(positive_uniques):
     )
     plt.xticks(fontsize=8)
     plt.title("Model comparison (Accuracy)")
-    mc.write_plot(save_to, "model_comparison_accuracy")
+    mc.write.write_plot(save_to, "model_comparison_accuracy")
     np.savetxt(
         os.path.join(save_to, "average_model_accuracies.csv"),
         np.array([model_names, average_model_accuracies]),

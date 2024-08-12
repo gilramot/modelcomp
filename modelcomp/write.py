@@ -7,6 +7,9 @@ import pandas as pd
 import modelcomp as mc
 
 
+__all__ = ["write_data", "write_plot"]
+
+
 def export_arrays(arrays, save_to):
     if arrays is not None:
         for index, value in enumerate(arrays):
@@ -48,7 +51,7 @@ def write_data(
     :return: data exported to the filesystem (default: 'export/<train label>/<test label>/<model name>/data')
     """
     save_to = os.path.join("export", save_to_unjoined, "data")
-    mc.make_dir(save_to)
+    mc.utilities.make_dir(save_to)
     if accuracies is not None:
         np.savetxt(os.path.join(save_to, "accuracies.csv"), aucs, delimiter=",")
     if interp_tpr is not None:
@@ -97,7 +100,7 @@ def write_plot(save_to, img_name):
     :return: the current plt state exported to the filesystem
     """
     dir = save_to
-    mc.make_dir(dir)
+    mc.utilities.make_dir(dir)
     plt.rcParams["figure.figsize"] = [i * 2 for i in plt.rcParams["figure.figsize"]]
     plt.savefig(os.path.join(dir, img_name + ".png"), bbox_inches="tight")
     # saving plot

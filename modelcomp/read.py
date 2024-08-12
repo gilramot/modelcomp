@@ -5,6 +5,8 @@ import pandas as pd
 
 import modelcomp as mc
 
+__all__ = ["read_data"]
+
 
 def read_data(read_from_unjoined):
     """
@@ -12,7 +14,7 @@ def read_data(read_from_unjoined):
     :param read_from_unjoined:
     :return: accuracies, interpolation of tprs, fprs, tprs, interpolation of recalls, precisions, recalls, aucs, pr aucs, feature importances and shap values)
     """
-    save_to = mc.join_save(os.path.join(read_from_unjoined, "data"))
+    save_to = mc.utilities.join_save(os.path.join(read_from_unjoined, "data"))
     interp_tpr = []
     interp_recall = []
     fprs = []
