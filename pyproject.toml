@@ -41,4 +41,3 @@ dependencies = [
 [project.urls]
 Repository = "https://github.com/gilramot/modelcomp"
 Issues = "https://github.com/gilramot/modelcomp/issues"
-Appendix = "https://github.com/gilramot/modelcomp-appendix"
