@@ -2,6 +2,7 @@ import os
 import pandas as pd
 import random
 import xgboost
+import numpy as np
 from sklearn import svm
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
@@ -57,9 +58,9 @@ def get_feature_importance(model):
     :return:
     """
     if type(model) in [RandomForestClassifier, xgboost.XGBClassifier]:
-        return model.feature_importances_
+        return np.abs(model.feature_importances_)
     if type(model) in [LogisticRegression, svm.SVC]:
-        return model.coef_
+        return np.abs(model.coef_)
 
 
 def merge_dfs(df1, df2, merged_column='SampleID'):
