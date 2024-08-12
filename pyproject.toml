@@ -1,9 +1,9 @@
 [build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
+requires = ['setuptools']
+build-backend = 'setuptools.build_meta'
 
 [project]
-name = "modelcomp"
+name = 'modelcomp'
 version = "0.0.1a1"
 authors = [
     { name = "Gil Ramot", email = "gilramot3@gmail.com" }
@@ -34,7 +34,6 @@ dependencies = [
     "pandas",
     "scikit-learn",
     "shap",
-    "xgboost",
     "seaborn"
 ]
 
