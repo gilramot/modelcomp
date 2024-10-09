@@ -25,8 +25,15 @@ def individual_plots(
     :param save_to_unjoined: Location to save the plots to
     :return: Plots showing the performance of a single model, exported to the filesystem (default: 'export/<train label>/<test label>/<model name>/plots')
     """
-    save_to = mc.utilities.join_save(os.path.join(save_to_unjoined, "plots"))
-    trained_on, tested_on, model_name = mc.utilities.filename_to_data(save_to)
+    interp_tpr = np.array(interp_tpr)
+    interp_recall = np.array(interp_recall)
+    if len(interp_tpr.shape) == 1:
+        interp_tpr = interp_tpr.reshape(1, -1)
+    if len(interp_recall.shape) == 1:
+        interp_recall = interp_recall.reshape(1, -1)
+
+    save_to = mc.utils.join_save(os.path.join(save_to_unjoined, "plots"))
+    trained_on, tested_on, model_name = mc.utils.filename_to_data(save_to)
     trained_on = "all labels" if trained_on == "a" else trained_on
     tested_on = "all labels" if tested_on == "a" else tested_on
     title_start = f"{model_name} " + (
@@ -151,14 +158,14 @@ def general_plots(positive_uniques):
     :param positive_uniques: The positive diseases' IDs in the input data
     :return: Plots exported to the filesystem (default: 'export/GENERAL PLOTS')
     """
-    model_names = mc.utilities.join_save(os.path.join("A", "A")).listdir()
-    save_to = mc.utilities.join_save("GENERAL PLOTS")
-    mc.utilities.make_dir(save_to)
+    model_names = os.listdir(mc.utils.join_save(os.path.join("A", "A")))
+    save_to = mc.utils.join_save("GENERAL PLOTS")
+    mc.utils.make_dir(save_to)
     model_aucs = []
-    for (model_name,) in model_names:
+    for model_name in model_names:
         mean_auc = np.mean(
             np.genfromtxt(
-                mc.utilities.join_save(
+                mc.utils.join_save(
                     os.path.join("A", "A", model_name, "data", "aucs.csv")
                 )
             )
@@ -169,7 +176,7 @@ def general_plots(positive_uniques):
             for model_name in model_names:
                 mean_auc = np.mean(
                     np.genfromtxt(
-                        mc.utilities.join_save(
+                        mc.utils.join_save(
                             os.path.join(
                                 trained_on, tested_on, model_name, "data", "aucs.csv"
                             )
@@ -279,21 +286,21 @@ def general_plots(positive_uniques):
     mc.write.write_plot(save_to, "correlation_heatmap_models_auc")
 
     model_pr_aucs = []
-    for model_name, model_name_short in model_names:
+    for model_name in model_names:
         mean_pr_auc = np.mean(
             np.genfromtxt(
-                mc.utilities.join_save(
+                mc.utils.join_save(
                     os.path.join("A", "A", model_name, "data", "pr_aucs.csv")
                 )
             )
         )
-        model_pr_aucs.append([model_name_short, mean_pr_auc, "A", "A", True])
+        model_pr_aucs.append([model_name, mean_pr_auc, "A", "A", True])
     for tested_on in positive_uniques:
         for trained_on in positive_uniques:
-            for model_name, model_name_short in model_names:
+            for model_name in model_names:
                 mean_pr_auc = np.mean(
                     np.genfromtxt(
-                        mc.utilities.join_save(
+                        mc.utils.join_save(
                             os.path.join(
                                 trained_on, tested_on, model_name, "data", "pr_aucs.csv"
                             )
@@ -302,7 +309,7 @@ def general_plots(positive_uniques):
                 )
                 model_pr_aucs.append(
                     [
-                        model_name_short,
+                        model_name,
                         mean_pr_auc,
                         trained_on,
                         tested_on,
@@ -423,21 +430,21 @@ def general_plots(positive_uniques):
     mc.write.write_plot(save_to, "correlation_heatmap_models_pr_auc")
 
     model_accuracies = []
-    for model_name, model_name_short in model_names:
+    for model_name in model_names:
         mean_auc = np.mean(
             np.genfromtxt(
-                mc.utilities.join_save(
+                mc.utils.join_save(
                     os.path.join("A", "A", model_name, "data", "accuracies.csv")
                 )
             )
         )
-        model_accuracies.append([model_name_short, mean_auc, "A", "A", True])
+        model_accuracies.append([model_name, mean_auc, "A", "A", True])
     for tested_on in positive_uniques:
         for trained_on in positive_uniques:
-            for model_name, model_name_short in model_names:
+            for model_name in model_names:
                 mean_auc = np.mean(
                     np.genfromtxt(
-                        mc.utilities.join_save(
+                        mc.utils.join_save(
                             os.path.join(
                                 trained_on,
                                 tested_on,
@@ -450,7 +457,7 @@ def general_plots(positive_uniques):
                 )
                 model_accuracies.append(
                     [
-                        model_name_short,
+                        model_name,
                         mean_auc,
                         trained_on,
                         tested_on,

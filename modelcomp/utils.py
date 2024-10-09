@@ -1,11 +1,23 @@
 import os
 import random
 import warnings
+import pickle
 
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, LabelBinarizer
+from sklearn.metrics import (
+    accuracy_score,
+    roc_curve,
+    precision_recall_curve,
+)
+import shap
+
+from modelcomp.storage import ModelComparison, ModelStats, Metric
+from modelcomp.constants import METRICS
+import modelcomp as mc
+import pickle as pkl
 
 __all__ = [
     "remove_falsy_columns",
@@ -219,30 +231,113 @@ def remove_string_columns(df):
     return df.drop("SampleID", axis=1, errors="ignore")
 
 
-def make_dir(directory):
+def get_accuracy(model, X, y):
+    return accuracy_score(y, model.predict(X))
+
+
+def get_fprtprauc(model, X, y):
     """
-    Creates a subdirectory, if one doesn't exist
-    :param directory: The directory that needs to be added
+    Calculates the fpr, tpr & auc of a model based on the train & test data
+    :param model: The trained model
+    :param X: Testing data
+    :param y: Binary labels
+    :return: fpr, tpr values
     """
-    if not os.path.exists(directory):
-        os.makedirs(directory)
+    mean_fpr = np.linspace(0, 1, 100)
+
+    if len(set(y)) == 2:
+        fpr, tpr, thresholds = roc_curve(y, model.predict_proba(X)[:, 1])
+
+    else:
+        y_onehot_test = LabelBinarizer().fit_transform(y)
+        fpr, tpr, thresholds = roc_curve(
+            y_onehot_test.ravel(), model.predict_proba(X).ravel()
+        )
+
+    return fpr, tpr, thresholds
+    # returning fpr, tpr of roc_curve
 
 
-def join_save(add=None):
-    save_to = "export"
-    return os.path.join(save_to, add) if add is not None else save_to
+def get_pr(model, X, y):
+    """
+    Calculates the precision & recall of a model for multiclass classification
+    :param model: The trained model
+    :param X: Testing data
+    :param y: True labels
+    :return: precision & recall values for each class
+    """
+    mean_recall = np.linspace(0, 1, 100)
+    if len(set(y)) == 2:
+        precision, recall, thresholds = precision_recall_curve(
+            y, model.predict_proba(X)[:, 1]
+        )
+    else:
+        y_onehot_test = LabelBinarizer().fit_transform(y)
+        precision, recall, thresholds = precision_recall_curve(
+            y_onehot_test.ravel(), model.predict_proba(X).ravel()
+        )
+    return precision, recall, thresholds
 
 
-def data_to_filename(test_class, model_name, trained_on=None):
-    test_class = "A" if type(test_class) is list else test_class
-    trained_on = "A" if type(trained_on) is list else trained_on
-    # mapping test and train classes to all label if they are more than 1 label
-    return os.path.join(
-        trained_on if trained_on is not None else test_class, test_class, model_name
+def get_explainers(model, X_test, feature_names):
+    feature_importances = pd.DataFrame(
+        get_feature_importance(model).T,
+        index=feature_names,
+        columns=["Importance"],
     )
+    # feature importance
+    shap_values = shap.explainers.Permutation(
+        model.predict, X_test, max_evals=1000
+    ).shap_values(X_test)
+    # shap values
+    return feature_importances, shap_values
 
 
-def filename_to_data(filename):
-    splits = filename.rsplit("/", 4)
+def import_moco(path):
+        modelcomparison = ModelComparison()
+        for idx in range(len(os.listdir(os.path.join(path, "splits")))):
+            general_split_dir = os.path.join(path, "splits", f"split_{idx}")
+            train_indices_path = os.path.join(general_split_dir, "train.csv")
+            test_indices_path = os.path.join(general_split_dir, "test.csv")
 
-    return splits[-4].lower(), splits[-3].lower(), splits[-2]
+            train = np.loadtxt(train_indices_path, delimiter=",", dtype=int)
+            test = np.loadtxt(test_indices_path, delimiter=",", dtype=int)
+            modelcomparison.splits.append((train, test))
+
+        model_stats = {}
+        for model_index in range(len(os.listdir(path)) - 1):
+            model_dir = os.path.join(path, f"model_{model_index}")
+            model_pkl_path = os.path.join(model_dir, "model.pkl")
+
+            with open(model_pkl_path, "rb") as model_pkl_file:
+                model = pickle.load(model_pkl_file)
+
+            model_stats[model] = ModelStats(model)
+
+            if os.path.exists(os.path.join(model_dir, "fit_models")):
+                fit_models_dir = os.path.join(model_dir, "fit_models")
+                for split_index in range(len(modelcomparison.splits)):
+                    fit_model_pkl_path = os.path.join(fit_models_dir, f"split_{split_index}.pkl")
+                    with open(fit_model_pkl_path, "rb") as fit_model_pkl_file:
+                        fit_model = pickle.load(fit_model_pkl_file)
+                    model_stats[model].append_fit_model(fit_model)
+
+            for metric in METRICS.keys():
+                if os.path.exists(os.path.join(model_dir, metric)):
+                    metric_dir = os.path.join(model_dir, metric)
+                    metric_instance = Metric(name=metric)
+                    for split_index in range(len(modelcomparison.splits)):
+                        metric_csv_path = os.path.join(metric_dir, f"split_{split_index}.csv")
+                        metric_values = np.loadtxt(metric_csv_path, delimiter=",")
+                        metric_instance.append(metric_values)
+                        setattr(model_stats[model], metric, metric_instance)
+            if os.path.exists(os.path.join(model_dir, "y_true")):
+                for split_index in range(len(modelcomparison.splits)):
+                    y_true_csv_path = os.path.join(os.path.join(model_dir, "y_true"), f"split_{split_index}.csv")
+                    y_true_values = np.loadtxt(y_true_csv_path, delimiter=",")
+                    model_stats[model].precision_recall_curve.y_true.append(y_true_values)
+                    y_pred_csv_path = os.path.join(os.path.join(model_dir, "y_pred"), f"split_{split_index}.csv")
+                    y_pred_values = np.loadtxt(y_pred_csv_path, delimiter=",")
+                    model_stats[model].precision_recall_curve.y_pred.append((y_pred_values))
+        modelcomparison.model_stats = model_stats
+        return modelcomparison
