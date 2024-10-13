@@ -13,11 +13,9 @@ from sklearn.metrics import (
     precision_recall_curve,
 )
 import shap
-
-from modelcomp.storage import ModelComparison, ModelStats, Metric
 from modelcomp.constants import METRICS
-import modelcomp as mc
 import pickle as pkl
+from sklearn.base import clone
 
 __all__ = [
     "remove_falsy_columns",
@@ -75,45 +73,6 @@ def split_array(arr, test_size=0.2, seed=None):
     random.shuffle(arr) if seed is None else random.Random(seed).shuffle(arr)
     return arr[: int(len(arr) * (1 - test_size))], arr[int(0 - len(arr) * test_size) :]
     # returns a split of a df
-
-
-def get_feature_importance(model, attr=None):
-    """
-    Gets the feature importance of a trained model
-    :param model: The trained model (to get a return value needs to have a known attribute or a custom attribute name)
-    :param attr: The model's attribute name (default: None)
-    :return:
-    """
-    if attr is not None:
-        if hasattr(model, attr):
-            try:
-                return np.abs(getattr(model, attr))
-            except AttributeError:
-                try:
-                    return np.abs(getattr(model, attr)())
-                except ValueError:
-                    ValueError(
-                        f"{model.__class__.__name__}.{attr}() return value is not of a numerical type"
-                    )
-            except ValueError:
-                raise ValueError(
-                    f"{model.__class__.__name__}.{attr} is not of a numerical type"
-                )
-
-        else:
-            raise AttributeError(
-                f"{model.__class__.__name__} has no attribute named {attr}"
-            )
-
-    if hasattr(model, "feature_importance_"):
-        return np.abs(model.feature_importances_)
-    if hasattr(model, "coef_"):
-        return np.abs(model.coef_)
-
-    warnings.warn(
-        f"{model.__class__.__name__} has no known attribute and no custom attribute was given, so None was returned"
-    )
-    return None
 
 
 def merge_dfs(df1, df2, merged_column="SampleID"):
@@ -294,50 +253,62 @@ def get_explainers(model, X_test, feature_names):
 
 
 def import_moco(path):
-        modelcomparison = ModelComparison()
-        for idx in range(len(os.listdir(os.path.join(path, "splits")))):
-            general_split_dir = os.path.join(path, "splits", f"split_{idx}")
-            train_indices_path = os.path.join(general_split_dir, "train.csv")
-            test_indices_path = os.path.join(general_split_dir, "test.csv")
+    modelcomparison = ModelComparison()
+    for idx in range(len(os.listdir(os.path.join(path, "splits")))):
+        general_split_dir = os.path.join(path, "splits", f"split_{idx}")
+        train_indices_path = os.path.join(general_split_dir, "train.csv")
+        test_indices_path = os.path.join(general_split_dir, "test.csv")
 
-            train = np.loadtxt(train_indices_path, delimiter=",", dtype=int)
-            test = np.loadtxt(test_indices_path, delimiter=",", dtype=int)
-            modelcomparison.splits.append((train, test))
+        train = np.loadtxt(train_indices_path, delimiter=",", dtype=int)
+        test = np.loadtxt(test_indices_path, delimiter=",", dtype=int)
+        modelcomparison.__splits.append((train, test))
 
-        model_stats = {}
-        for model_index in range(len(os.listdir(path)) - 1):
-            model_dir = os.path.join(path, f"model_{model_index}")
-            model_pkl_path = os.path.join(model_dir, "model.pkl")
+    model_stats = []
+    for model_idx in range(len(os.listdir(path)) - 1):
+        model_dir = os.path.join(path, f"model_{model_idx}")
+        model_pkl_path = os.path.join(model_dir, "model.pkl")
 
-            with open(model_pkl_path, "rb") as model_pkl_file:
-                model = pickle.load(model_pkl_file)
+        with open(model_pkl_path, "rb") as model_pkl_file:
+            model = clone(pickle.load(model_pkl_file))
 
-            model_stats[model] = ModelStats(model)
+        model_stats.append(ModelStats(model))
 
-            if os.path.exists(os.path.join(model_dir, "fit_models")):
-                fit_models_dir = os.path.join(model_dir, "fit_models")
-                for split_index in range(len(modelcomparison.splits)):
-                    fit_model_pkl_path = os.path.join(fit_models_dir, f"split_{split_index}.pkl")
-                    with open(fit_model_pkl_path, "rb") as fit_model_pkl_file:
-                        fit_model = pickle.load(fit_model_pkl_file)
-                    model_stats[model].append_fit_model(fit_model)
+        if os.path.exists(os.path.join(model_dir, "fit_models")):
+            fit_models_dir = os.path.join(model_dir, "fit_models")
+            for split_index in range(len(modelcomparison.__splits)):
+                fit_model_pkl_path = os.path.join(
+                    fit_models_dir, f"split_{split_index}.pkl"
+                )
+                with open(fit_model_pkl_path, "rb") as fit_model_pkl_file:
+                    fit_model = pickle.load(fit_model_pkl_file)
+                model_stats[model_idx].append_fit_model(fit_model)
 
-            for metric in METRICS.keys():
-                if os.path.exists(os.path.join(model_dir, metric)):
-                    metric_dir = os.path.join(model_dir, metric)
-                    metric_instance = Metric(name=metric)
-                    for split_index in range(len(modelcomparison.splits)):
-                        metric_csv_path = os.path.join(metric_dir, f"split_{split_index}.csv")
-                        metric_values = np.loadtxt(metric_csv_path, delimiter=",")
-                        metric_instance.append(metric_values)
-                        setattr(model_stats[model], metric, metric_instance)
-            if os.path.exists(os.path.join(model_dir, "y_true")):
-                for split_index in range(len(modelcomparison.splits)):
-                    y_true_csv_path = os.path.join(os.path.join(model_dir, "y_true"), f"split_{split_index}.csv")
-                    y_true_values = np.loadtxt(y_true_csv_path, delimiter=",")
-                    model_stats[model].precision_recall_curve.y_true.append(y_true_values)
-                    y_pred_csv_path = os.path.join(os.path.join(model_dir, "y_pred"), f"split_{split_index}.csv")
-                    y_pred_values = np.loadtxt(y_pred_csv_path, delimiter=",")
-                    model_stats[model].precision_recall_curve.y_pred.append((y_pred_values))
-        modelcomparison.model_stats = model_stats
-        return modelcomparison
+        for metric in METRICS.keys():
+            if os.path.exists(os.path.join(model_dir, metric)):
+                metric_dir = os.path.join(model_dir, metric)
+                metric_instance = Metric(name=metric)
+                for split_index in range(len(modelcomparison.__splits)):
+                    metric_csv_path = os.path.join(
+                        metric_dir, f"split_{split_index}.csv"
+                    )
+                    metric_values = np.loadtxt(metric_csv_path, delimiter=",")
+                    metric_instance.append(metric_values)
+                    setattr(model_stats[model_idx], metric, metric_instance)
+        if os.path.exists(os.path.join(model_dir, "y_true")):
+            for split_index in range(len(modelcomparison.__splits)):
+                y_true_csv_path = os.path.join(
+                    model_dir, "y_true", f"split_{split_index}.csv"
+                )
+                y_true_values = np.loadtxt(y_true_csv_path, delimiter=",")
+                model_stats[model_idx].precision_recall_curve.y_true.append(
+                    y_true_values
+                )
+                y_pred_csv_path = os.path.join(
+                    model_dir, "y_pred", f"split_{split_index}.csv"
+                )
+                y_pred_values = np.loadtxt(y_pred_csv_path, delimiter=",")
+                model_stats[model_idx].precision_recall_curve.y_pred.append(
+                    y_pred_values
+                )
+    modelcomparison.__model_stats = model_stats
+    return modelcomparison
