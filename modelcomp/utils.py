@@ -13,7 +13,7 @@ from sklearn.metrics import (
     precision_recall_curve,
 )
 import shap
-from modelcomp.constants import METRICS
+from modelcomp._constants import METRICS
 import pickle as pkl
 from sklearn.base import clone
 
