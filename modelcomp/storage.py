@@ -1,62 +1,104 @@
 import pickle
 import numpy as np
 from sklearn import clone
-from tqdm import tqdm
-from modelcomp import constants
+from modelcomp import _constants
 import warnings
-from modelcomp.constants import METRICS
-import os
-import pandas as pd
+import modelcomp._constants as _constants
+import os.path
 import pickle as pkl
 from abc import abstractmethod
+import modelcomp._sysutils as _sysutils
 
 __all__ = ["ModelComparison"]
 
 
 class BaseMetric:
-    def __init__(self, name, feature_names=None):
-        self.__name = name
-        self.__values = []
-        self.__feature_names = feature_names
+    def __init__(self, name, model_stats):
+        self._model_stats = model_stats
+        self._name = name
+        self._values = []
 
     def append(self, value):
-        self.__values.append(value)
+        self._values.append(value)
 
     def export(self, path, *measures, plots=False):
-        os.makedirs(os.path.join(path, f"{self.name}"), exist_ok=True)
-        for index, value in enumerate(self.__values):
-            np.savetxt(
-                os.path.join(path, f"{self.name}", f"split_{index}.csv"),
-                value,
-                delimiter=",",
-            )
+        _sysutils.check_dir_write(path, force_create=True)
+        for index, value in enumerate(self._values):
+            if isinstance(value, np.ndarray) and value.shape == ():
+                value = value.item()
+            if isinstance(value, (np.ndarray, list)):
+                np.savetxt(
+                    os.path.join(path, f"split_{index}.csv"),
+                    value,
+                    delimiter=",",
+                )
+            else:
+                np.savetxt(
+                    os.path.join(path, f"split_{index}.csv"),
+                    [value],
+                    delimiter=",",
+                )
         if plots:
-            self.plot().savefig(os.path.join(path, f"{self.name}.png"))
+            try:
+                import matplotlib.pyplot as plt
+            except ImportError:
+                raise ImportError("matplotlib is required for plotting")
+            if isinstance(self, CurveMetric):
+                self.plot().savefig(
+                    os.path.join(path, f"{self.name}.png")
+                )
+            else:
+                self.plot().savefig(os.path.join(path, f"{self.name}.png"))
+            plt.close()
 
         for measure in measures:
             if measure == "mean":
-                np.savetxt(
-                    os.path.join(path, self.name, "mean.csv"),
-                    [self.mean],
-                    delimiter=",",
-                )
+                if self.mean is not None:
+                    if isinstance(value, np.ndarray) and value.shape == ():
+                        value = value.item()
+                    if isinstance(value, (np.ndarray, list)):
+                        np.savetxt(
+                            os.path.join(path, "mean.csv"),
+                            self.mean,
+                            delimiter=",",
+                        )
+                    else:
+                        np.savetxt(
+                            os.path.join(path, "mean.csv"),
+                            [self.mean],
+                            delimiter=",",
+                        )
+                else:
+                    warnings.warn(f"No mean for metric {self.name}")
             elif measure == "std":
-                np.savetxt(
-                    os.path.join(path, self.name, "std.csv"),
-                    [self.std],
-                    delimiter=",",
-                )
+                if self.std is not None:
+                    if isinstance(value, np.ndarray) and value.shape == ():
+                        value = value.item()
+                    if isinstance(value, (np.ndarray, list)):
+                        np.savetxt(
+                            os.path.join(path, "std.csv"),
+                            self.std,
+                            delimiter=",",
+                        )
+                    else:
+                        np.savetxt(
+                            os.path.join(path, "std.csv"),
+                            [self.std],
+                            delimiter=",",
+                        )
+                else:
+                    warnings.warn(f"No standard deviation for metric {self.name}")
+            else:
+                warnings.warn(f"Unrecognized measure {measure}")
 
     @abstractmethod
     def plot(self):
         pass
-        
 
     @property
     @abstractmethod
     def mean(self):
         pass
-        
 
     @property
     @abstractmethod
@@ -65,35 +107,42 @@ class BaseMetric:
 
     @property
     def name(self):
-        return self.__name
+        return self._name
 
     @property
     def values(self):
-        return self.__values
+        return self._values
 
-    @property
-    def feature_names(self):
-        return self.__feature_names
-
-    @feature_names.setter
-    def feature_names(self, feature_names):
-        self.__feature_names = feature_names
+    @values.setter
+    def values(self, values):
+        self._values = values
 
     def __getitem__(self, index):
-        return self.__values[index]
+        return self._values[index]
 
     def __eq__(self, other):
         if not isinstance(other, BaseMetric):
             return False
-        return (
-            self.__name == other.__name
-            and self.__values == other.__values
-        )
+        return self._name == other._name and self._values == other._values
 
 
 class ScoreMetric(BaseMetric):
     def invoke(self, model, X, y, train, test):
-        self.append(METRICS[self.name](y[test], model.predict(X[test])))
+        self.append(_constants.METRICS[self.name](y[test], model.predict(X[test])))
+
+    @staticmethod
+    def from_path(path, model_stats):
+        _sysutils.check_dir_read(path)
+
+        metric = ScoreMetric(name=os.path.basename(path), model_stats=model_stats)
+        i = 0
+        while _sysutils.check_file_read(
+            os.path.join(path, f"split_{i}.csv"), raise_errors=False
+        ):
+            values = np.loadtxt(os.path.join(path, f"split_{i}.csv"), delimiter=",")
+            metric.append(values)
+            i += 1
+        return metric
 
     @property
     def mean(self):
@@ -105,76 +154,81 @@ class ScoreMetric(BaseMetric):
 
     def plot(self):
         import matplotlib.pyplot as plt
+
         fig, ax = plt.subplots()
-        ax.plot(self.values, marker="o", linestyle="-", color="b")
-        ax.set_title(f"{self.name} over splits")
-        ax.set_xlabel("Split")
+        ax.scatter([""] * len(self.values), self.values)
+        ax.set_xlabel("")
+        ax.set_title(f"{self.name} scatter plot")
         ax.set_ylabel(self.name)
-        ax.grid(True)
         return fig
 
 
 class CurveMetric(BaseMetric):
-    def __init__(self, name, feature_names=None):
-        super().__init__(name, feature_names)
-        self.y_true = []
-        self.y_pred = []
-
     def invoke(self, model, X, y, train, test):
-        y_pred = model.predict_proba(X[test])[:, 1]
-        if self.name == "precision_recall_curve":
-            precision, recall, thresholds = METRICS[self.name](y[test], y_pred)
-            self.y_true.append(np.array(y[test]))
-            self.y_pred.append(np.array(y_pred))
-            self.append(np.vstack([precision, recall, np.append(thresholds, np.nan)]))
-        elif self.name == "roc_curve":
-            fpr, tpr, thresholds = METRICS[self.name](y[test], y_pred)
+        y_pred_proba = model.predict_proba(X[test])[:, 1]
+        if self.name == "roc_curve":
+            fpr, tpr, thresholds = _constants.METRICS[self.name](y[test], y_pred_proba)
             self.append(np.vstack([fpr, tpr, thresholds]))
+        if self.name == "precision_recall_curve":
+            precision, recall, thresholds = _constants.METRICS[self.name](
+                y[test], y_pred_proba
+            )
+            self._model_stats.y_true.append(np.array(y[test]))
+            self._model_stats.y_pred.append(np.array(y_pred_proba))
+            self.append(np.vstack([precision, recall, np.append(thresholds, np.nan)]))
+
+    @staticmethod
+    def from_path(path, model_stats):
+        _sysutils.check_dir_read(path)
+        metric = CurveMetric(name=os.path.basename(path), model_stats=model_stats)
+        i = 0
+        while _sysutils.check_file_read(
+            os.path.join(path, f"split_{i}.csv"), raise_errors=False
+        ):
+            values = np.loadtxt(os.path.join(path, f"split_{i}.csv"), delimiter=",")
+            metric.append(values)
+            i += 1
+        return metric
 
     @property
     def mean(self):
-        if self.name == "roc_curve":
-            interp_values = []
-            for values in self.values:
-                mean_tpr = np.interp(np.linspace(0, 1, 101), values[0], values[1])
-                mean_tpr[0] = 0.0
-                mean_tpr[-1] = 1.0
-                interp_values.append(mean_tpr)
-            return np.linspace(0, 1, 101), np.mean(interp_values, axis=0)
-        elif self.name == "precision_recall_curve":
-            y_true = np.concatenate(self.y_true)
-            y_pred = np.concatenate(self.y_pred)
-            precision, recall, _ = METRICS[self.name](y_true, y_pred)
-            return precision, recall
+        return _constants.METRICS[self.name](
+            np.concatenate(self._model_stats.y_true), np.concatenate(self._model_stats.y_pred)
+        )[0:2]
 
     @property
     def std(self):
-        if self.name == "roc_curve":
-            interp_values = []
-            for values in self.values:
-                mean_tpr = np.interp(np.linspace(0, 1, 101), values[0], values[1])
-                mean_tpr[0] = 0.0
-                mean_tpr[-1] = 1.0
-                interp_values.append(mean_tpr)
-            return np.linspace(0, 1, 101), np.std(interp_values, axis=0)
+        pass
 
     def plot(self):
         import matplotlib.pyplot as plt
+
         fig, ax = plt.subplots()
         if self.name == "roc_curve":
-            for values in self.values:
+            try:
+                from sklearn.metrics import roc_auc_score
+            except ImportError:
+                raise ImportError("sklearn is required for plotting ROC curves")
+            aucs = []
+            for values_idx, values in enumerate(self.values):
                 ax.plot(values[0], values[1], linestyle="-", alpha=0.3)
+                aucs.append(
+                    roc_auc_score(self._model_stats.y_true[values_idx], self._model_stats.y_pred[values_idx])
+                )
             mean_fpr, mean_tpr = self.mean
-            ax.plot(mean_fpr, mean_tpr, color="b", label="Mean ROC curve")
-            tprs_upper = np.minimum(mean_tpr + self.std, 1)
-            tprs_lower = np.maximum(mean_tpr - self.std, 0)
-            ax.fill_between(
+            ax.plot(
                 mean_fpr,
-                tprs_lower,
-                tprs_upper,
-                color="grey",
-                alpha=0.3,
-                label="±1 std. dev.",
+                mean_tpr,
+                color="b",
+                label=r"Mean ROC Curve (AUC = %0.2f $\pm$ %0.2f)"
+                % (
+                    roc_auc_score(
+                        np.concatenate(self._model_stats.y_true), np.concatenate(self._model_stats.y_pred)
+                    ),
+                    np.std(aucs),
+                ),
+                lw=2,
+                alpha=0.8,
             )
             ax.set_title("ROC Curve")
             ax.set_xlabel("False Positive Rate")
@@ -182,24 +236,34 @@ class CurveMetric(BaseMetric):
             ax.legend(loc="lower right")
             ax.grid(True)
         elif self.name == "precision_recall_curve":
-            for values in self.values:
+            try:
+                from sklearn.metrics import average_precision_score
+            except ImportError:
+                raise ImportError(
+                    "sklearn is required for plotting Precision-Recall curves"
+                )
+            pr_aucs = []
+            for split_idx, values in enumerate(self.values):
                 ax.plot(values[1], values[0], linestyle="-", alpha=0.3)
+                pr_aucs.append(
+                    average_precision_score(
+                        self._model_stats.y_true[split_idx], self._model_stats.y_pred[split_idx]
+                    )
+                )
             mean_precision, mean_recall = self.mean
             ax.plot(
                 mean_recall,
                 mean_precision,
                 color="b",
-                label="Mean Precision-Recall curve",
-            )
-            precisions_upper = np.minimum(mean_precision + self.std, 1)
-            precisions_lower = np.maximum(mean_precision - self.std, 0)
-            ax.fill_between(
-                mean_recall,
-                precisions_lower,
-                precisions_upper,
-                color="grey",
-                alpha=0.3,
-                label="±1 std. dev.",
+                label=r"Mean PR Curve (AUC = %0.2f $\pm$ %0.2f)"
+                % (
+                    average_precision_score(
+                        np.concatenate(self._model_stats.y_true), np.concatenate(self._model_stats.y_pred)
+                    ),
+                    np.std(pr_aucs),
+                ),
+                lw=2,
+                alpha=0.8,
             )
             ax.set_title("Precision-Recall Curve")
             ax.set_xlabel("Recall")
@@ -210,90 +274,256 @@ class CurveMetric(BaseMetric):
 
 
 class ImportanceMetric(BaseMetric):
+    def __init__(self, name, model_stats, feature_names=None):
+        super().__init__(name, model_stats)
+        self.__test_splits = []
+        if self.name == "builtin_importance":
+            pass
+        elif self.name == "shap_explainer":
+            self.__explainer = None
+        else:
+            pass
+
+    @staticmethod
+    def from_path(path, model_stats):
+        _sysutils.check_dir_read(path)
+        metric = ImportanceMetric(name=os.path.basename(path), model_stats=model_stats)
+        if metric.name == "builtin_importance":
+            i = 0
+            while _sysutils.check_file_read(
+                os.path.join(path, f"split_{i}.csv"), raise_errors=False
+            ):
+                values = np.loadtxt(os.path.join(path, f"split_{i}.csv"), delimiter=",")
+                metric.append(values)
+                i += 1
+        if metric.name == "shap_explainer":
+            metric.__explainer = pkl.load(
+                open(os.path.join(path, f"{metric.name}.pkl"), "rb")
+            )
+        return metric
+
     def invoke(self, model, X, y, train, test):
         self.__X = X
+        self.__test_splits.append(test)
         if self.name == "builtin_importance":
-            self.append(constants.builtin_importance(model))
-        elif self.name == "shap_values":
-            self.append(constants.shap_values(model, test, X[test]))
+            self.append(_constants.builtin_importance(model))
+        elif self.name == "shap_explainer":
+            self.shap_append(_constants.shap_explainer(model, test, X[test]))
 
-    @property
-    def mean(self):
-        return np.mean(np.abs(self.values), axis=0)
+    def export(self, path, *measures, plots=False):
+        if self.name == "builtin_importance":
+            super().export(path, *measures, plots=plots)
+        elif self.name == "shap_explainer":
+            if self.__explainer is not None:
+                _sysutils.check_dir_write(path, force_create=True)
+                pkl.dump(
+                    self.__explainer, open(os.path.join(path, f"{self.name}.pkl"), "wb")
+                )
+            if plots:
+                self.plot().savefig(os.path.join(path, f"{self.name}.png"))
+        else:
+            pass
 
-    @property
-    def std(self):
-        return np.std(np.abs(self.values), axis=0)
+    def shap_append(self, value):
+        try:
+            import shap
+        except ImportError:
+            raise ImportError(f"shap is required for SHAP values calculation")
+        if type(value) is not shap.Explanation:
+            raise ValueError(f"SHAP values must be of type shap.Explanation")
+
+        value.values = value.values[:, :, 1]
+
+        if self.__explainer == None:
+            self.__explainer = value
+        else:
+
+            self.__explainer = shap.Explanation(
+                data=np.append(self.__explainer.data, value.data, axis=0),
+                base_values=np.append(self.__explainer.base_values, value.base_values),
+                values=np.append(self.__explainer.values, value.values, axis=0),
+                feature_names=self._model_stats.feature_names,
+            )
 
     def plot(self):
         import matplotlib.pyplot as plt
+
         fig, ax = plt.subplots()
         if self.name == "builtin_importance":
             feature_importance = self.mean
-            if self.feature_names is not None:
-                ax.bar(self.feature_names, feature_importance)
-            else:
-                ax.bar(
-                    [f"f{i}" for i in range(len(feature_importance))],
-                    feature_importance,
+            # Get the indices of the 20 highest values
+            top_indices = np.argsort(feature_importance)[-20:]
+            # Plot the 20 highest values
+            if self._model_stats.feature_names is not None:
+                ax.barh(
+                    [self._model_stats.feature_names[i] for i in top_indices],
+                    feature_importance[top_indices],
                 )
+            else:
+                ax.barh([f"f{i}" for i in top_indices], feature_importance[top_indices])
             ax.set_title("Feature Importance")
             ax.set_xlabel("Feature")
             ax.set_ylabel("Importance")
             ax.grid(True)
-        elif self.name == "shap_values":
-            import shap
-            shap_values = self.values
-            if self.feature_names is not None:
-                shap.summary_plot(shap_values, self.__X, feature_names=self.feature_names)
-            else:
-                shap.summary_plot(shap_values, self.__X)
+        elif self.name == "shap_explainer":
+            try:
+                import shap
+            except ImportError:
+                raise ImportError(f"shap is required for SHAP values calculation")
+            shap.plots.beeswarm(self.__explainer, max_display=20, show=False)
+            fig = plt.gcf()
         return fig
+
+    @property
+    def mean(self):
+        if self.name == "builtin_importance":
+            return np.mean(np.abs(self.values), axis=0)
+        elif self.name == "shap_explainer":
+            return np.mean(np.abs(self.__explainer.values), axis=0)
+
+    @property
+    def std(self):
+        if self.name == "builtin_importance":
+            return np.std(np.abs(self.values), axis=0)
+        elif self.name == "shap_explainer":
+            return np.std(np.abs(self.__explainer.values), axis=0)
 
 
 class MetricFactory:
     @staticmethod
-    def create_metric(name, feature_names=None):
+    def create_metric(name, model_stats, feature_names=None):
         if name in ["accuracy_score", "precision_score", "recall_score", "f1_score"]:
-            return ScoreMetric(name)
+            return ScoreMetric(name, model_stats)
         elif name in ["precision_recall_curve", "roc_curve"]:
-            return CurveMetric(name)
-        elif name in ["builtin_importance", "shap_values"]:
-            return ImportanceMetric(name, feature_names)
+            return CurveMetric(name, model_stats)
+        elif name in ["builtin_importance", "shap_explainer"]:
+            return ImportanceMetric(name, model_stats, feature_names)
         else:
             warnings.warn(f"Metric {name} not supported")
             return None
+
+
 class ModelStats:
     def __init__(self, model, *metrics, feature_names=None):
         self.__model = model
         self.__fit_models = []
+        self.__y_true = []
+        self.__y_pred = []
+        self.__feature_names = feature_names
         for metric in metrics:
-            metric_to_set = MetricFactory.create_metric(name=metric, feature_names=feature_names)
+            metric_to_set = MetricFactory.create_metric(
+                name=metric, feature_names=feature_names
+            )
             if metric_to_set is not None:
                 setattr(self, metric, metric_to_set)
 
+    def invoke(self, fit_model, X, y, train, test):
+        self.__y_true.append(y[test])
+        self.__y_pred.append(fit_model.predict_proba(X[test])[:, 1])
+        for metric in self:
+            if isinstance(metric, CurveMetric):
+                metric.invoke(
+                    fit_model, X, y, train, test,
+                )
+            else:
+                metric.invoke(fit_model, X, y, train, test)
+    @staticmethod
+    def from_path(path):
+        _sysutils.check_dir_read(path)
+        model_stats = ModelStats(model=None)
+        model_stats.__model = pkl.load(open(os.path.join(path, "model.pkl"), "rb"))
+        if _sysutils.check_dir_read(
+            os.path.join(path, "fit_models"), raise_errors=False
+        ):
+            for split_index in range(len(os.listdir(os.path.join(path, "fit_models")))):
+                with open(
+                    os.path.join(path, "fit_models", f"split_{split_index}.pkl"), "rb"
+                ) as model_pkl_file:
+                    model_stats.__fit_models.append(pickle.load(model_pkl_file))
+        if _sysutils.check_dir_read(os.path.join(path, "y_true"), raise_errors=False):
+            for split_index in range(len(os.listdir(os.path.join(path, "y_true")))):
+                model_stats.__y_true.append(
+                    np.loadtxt(
+                        os.path.join(path, "y_true", f"split_{split_index}.csv"),
+                        delimiter=",",
+                    )
+                )
+        if _sysutils.check_dir_read(os.path.join(path, "y_pred"), raise_errors=False):
+            for split_index in range(len(os.listdir(os.path.join(path, "y_pred")))):
+                model_stats.__y_pred.append(
+                    np.loadtxt(
+                        os.path.join(path, "y_pred", f"split_{split_index}.csv"),
+                        delimiter=",",
+                    )
+                )
+        for metric in _constants.METRICS.keys():
+            metric_path = os.path.join(path, metric)
+            if os.path.exists(metric_path):
+                if metric in _constants.CURVE_METRICS:
+                    metric_type = CurveMetric
+                elif metric in _constants.SCORE_METRICS:
+                    metric_type = ScoreMetric
+                elif metric in _constants.IMPORTANCE_METRICS:
+                    metric_type = ImportanceMetric
+                else:
+                    warnings.warn(f"Metric {metric} not supported")
+                    continue
+                metric_instance = metric_type.from_path(metric_path, model_stats)
+                setattr(model_stats, metric, metric_instance)
+        return model_stats
+
     def append_metrics(self, **metrics):
         for metric in metrics.keys():
-            if metric not in METRICS:
-                raise ValueError(f"{metric} not found in METRICS")
+            if metric not in _constants.METRICS:
+                raise ValueError(f"{metric} not found in _constants.METRICS")
             if not hasattr(self, metric):
-                setattr(self, metric, MetricFactory.create_metric(name=metric))
+                setattr(self, metric, MetricFactory.create_metric(name=metric, model_stats=self))
 
             if metrics[metric] is not None:
                 getattr(self, metric).append(metrics[metric])
 
     def export(self, path, *measures, plots=False):
+        if self.__fit_models != []:
+            _sysutils.check_dir_write(
+                os.path.join(path, "fit_models"), force_create=True
+            )
+            for i in range(len(self.__fit_models)):
+                with open(
+                    os.path.join(path, "fit_models", f"split_{i}.pkl"), "wb"
+                ) as model_pkl_file:
+                    pickle.dump(self.__fit_models[i], model_pkl_file)
+
+        if self.__y_pred != []:
+            _sysutils.check_dir_write(os.path.join(path, "y_true"), force_create=True)
+            _sysutils.check_dir_write(os.path.join(path, "y_pred"), force_create=True)
+            for i in range(len(self.__y_pred)):
+                np.savetxt(
+                    os.path.join(path, "y_true", f"split_{i}.csv"),
+                    self.__y_true[i],
+                    delimiter=",",
+                )
+                np.savetxt(
+                    os.path.join(path, "y_pred", f"split_{i}.csv"),
+                    self.__y_pred[i],
+                    delimiter=",",
+                )
         for metric in self:
-            metric.export(path, *measures, plots=plots)
+            metric.export(os.path.join(path, metric.name), *measures, plots=plots)
 
     def __iter__(self):
         return (
-            metric for metric in self.__dict__.values() if isinstance(metric, BaseMetric)
+            metric
+            for metric in self.__dict__.values()
+            if isinstance(metric, BaseMetric)
         )
 
     def __len__(self):
         return len(
-            [metric for metric in self.__dict__.values() if isinstance(metric, BaseMetric)]
+            [
+                metric
+                for metric in self.__dict__.values()
+                if isinstance(metric, BaseMetric)
+            ]
         )
 
     @property
@@ -303,6 +533,18 @@ class ModelStats:
     @property
     def fit_models(self):
         return self.__fit_models
+
+    @property
+    def y_true(self):
+        return self.__y_true
+
+    @property
+    def y_pred(self):
+        return self.__y_pred
+    
+    @property
+    def feature_names(self):
+        return self.__feature_names
 
     def append_fit_model(self, fit_model):
         self.__fit_models.append(fit_model)
@@ -314,7 +556,8 @@ class ModelStats:
             self.__model == other.__model
             and self.__fit_models == other.__fit_models
             and all(
-                getattr(self, metric) == getattr(other, metric) for metric in METRICS
+                getattr(self, metric) == getattr(other, metric)
+                for metric in _constants.METRICS
             )
         )
 
@@ -340,76 +583,28 @@ class ModelComparison:
 
     @staticmethod
     def from_path(path):
-        if not os.path.exists(path):
-            raise FileNotFoundError(f"Path {path} not found")
-        elif not os.path.isdir(path):
-            raise ValueError(f"Path {path} is not a directory")
-        elif not os.access(path, os.R_OK):
-            raise PermissionError(f"Permission denied to read from {path}")
-        else:
-            modelcomparison = ModelComparison(models=[], validation=None, X=None, y=None)
-            modelcomparison.__splits = []
-            for idx in range(len(os.listdir(os.path.join(path, "splits")))):
-                general_split_dir = os.path.join(path, "splits", f"split_{idx}")
-                train_indices_path = os.path.join(general_split_dir, "train.csv")
-                test_indices_path = os.path.join(general_split_dir, "test.csv")
+        _sysutils.check_dir_read(path)
+        modelcomparison = ModelComparison(models=[], validation=None, X=None, y=None)
+        modelcomparison.__splits = []
+        for idx in range(len(os.listdir(os.path.join(path, "splits")))):
+            general_split_dir = os.path.join(path, "splits", f"split_{idx}")
+            train_indices_path = os.path.join(general_split_dir, "train.csv")
+            test_indices_path = os.path.join(general_split_dir, "test.csv")
 
-                train = np.loadtxt(train_indices_path, delimiter=",", dtype=int)
-                test = np.loadtxt(test_indices_path, delimiter=",", dtype=int)
-                modelcomparison.__splits.append((train, test))
+            train = np.loadtxt(train_indices_path, delimiter=",", dtype=int)
+            test = np.loadtxt(test_indices_path, delimiter=",", dtype=int)
+            modelcomparison.__splits.append((train, test))
 
-            model_stats = []
-            for model_idx in range(len(os.listdir(path)) - 1):
-                model_dir = os.path.join(path, f"model_{model_idx}")
-                model_pkl_path = os.path.join(model_dir, "model.pkl")
-
-                with open(model_pkl_path, "rb") as model_pkl_file:
-                    model = clone(pickle.load(model_pkl_file))
-
-                model_stats.append(ModelStats(model))
-
-                if os.path.exists(os.path.join(model_dir, "fit_models")):
-                    fit_models_dir = os.path.join(model_dir, "fit_models")
-                    for split_index in range(len(modelcomparison.__splits)):
-                        fit_model_pkl_path = os.path.join(
-                            fit_models_dir, f"split_{split_index}.pkl"
-                        )
-                        with open(fit_model_pkl_path, "rb") as fit_model_pkl_file:
-                            fit_model = pickle.load(fit_model_pkl_file)
-                        model_stats[model_idx].append_fit_model(fit_model)
-
-                for metric in METRICS.keys():
-                    if os.path.exists(os.path.join(model_dir, metric)):
-                        metric_dir = os.path.join(model_dir, metric)
-                        metric_instance = MetricFactory.create_metric(name=metric)
-                        for split_index in range(len(modelcomparison.__splits)):
-                            metric_csv_path = os.path.join(
-                                metric_dir, f"split_{split_index}.csv"
-                            )
-                            metric_values = np.loadtxt(metric_csv_path, delimiter=",")
-                            metric_instance.append(metric_values)
-                            setattr(model_stats[model_idx], metric, metric_instance)
-                if os.path.exists(os.path.join(model_dir, "y_true")):
-                    for split_index in range(len(modelcomparison.__splits)):
-                        y_true_csv_path = os.path.join(
-                            model_dir, "y_true", f"split_{split_index}.csv"
-                        )
-                        y_true_values = np.loadtxt(y_true_csv_path, delimiter=",")
-                        model_stats[model_idx].precision_recall_curve.y_true.append(
-                            y_true_values
-                        )
-                        y_pred_csv_path = os.path.join(
-                            model_dir, "y_pred", f"split_{split_index}.csv"
-                        )
-                        y_pred_values = np.loadtxt(y_pred_csv_path, delimiter=",")
-                        model_stats[model_idx].precision_recall_curve.y_pred.append(
-                            y_pred_values
-                        )
-            modelcomparison.__model_stats = model_stats
-            return modelcomparison
+        i = 0
+        while os.path.isdir(os.path.join(path, f"model_{i}")):
+            modelcomparison.__model_stats.append(
+                ModelStats.from_path(os.path.join(path, f"model_{i}"))
+            )
+            i += 1
+        return modelcomparison
 
     def validate(
-        self, *pipeline_metrics, keep_models=False, models=None, new_splits=False
+        self, *pipeline_metrics, keep_models=False, new_splits=False
     ):
         if new_splits:
             if self.__splits != []:
@@ -442,16 +637,14 @@ class ModelComparison:
                 **{pipeline_metric: None for pipeline_metric in pipeline_metrics}
             )
 
-            for train, test in tqdm(self.__splits, desc="Split"):
+            for train, test in self.__splits:
                 fit_model = clone(self.__model_stats[model_idx].model)
                 fit_model.fit(self.__X[train], self.__y[train])
                 if keep_models:
                     self.__model_stats[model_idx].append_fit_model(fit_model)
-                # fitting model
-
-                for metric in self.__model_stats[model_idx]:
-                    metric.feature_names = self.__feature_names
-                    metric.invoke(fit_model, self.__X, self.__y, train, test)
+                self.__model_stats[model_idx].invoke(
+                    fit_model, self.__X, self.__y, train, test
+                )
 
     def remove_model(self, model):
         self.models.remove(model)
@@ -466,7 +659,7 @@ class ModelComparison:
     def export(self, path, *measures, plots=False):
         for idx, (train, test) in enumerate(self.__splits):
             general_split_dir = os.path.join(path, "splits", f"split_{idx}")
-            os.makedirs(general_split_dir, exist_ok=True)
+            _sysutils.check_dir_write(general_split_dir, force_create=True)
             train_indices_path = os.path.join(general_split_dir, "train.csv")
             test_indices_path = os.path.join(general_split_dir, "test.csv")
 
@@ -478,11 +671,9 @@ class ModelComparison:
             model_stats = self.__model_stats[model_idx]
             model_dir = os.path.join(path, f"model_{model_idx}")
             if os.path.exists(model_dir):
-                warnings.warn(
-                    f"CSV files for model {model} already exist in {model_dir}. Overwriting."
-                )
+                warnings.warn(f"CSV files already exist in {model_dir}. Overwriting.")
 
-            os.makedirs(model_dir, exist_ok=True)
+            _sysutils.check_dir_write(model_dir, force_create=True)
 
             np.savetxt(
                 os.path.join(model_dir, "name.txt"),
@@ -502,11 +693,13 @@ class ModelComparison:
                     with open(model_pkl_path, "wb") as model_pkl_file:
                         pickle.dump(model_stats.fit_models[split_index], model_pkl_file)
 
-                model_stats.export(model_dir, *measures, plots=plots)
-        if plots:
-            for metric in METRICS:
-                fig = self.plot(metric)
-                fig.savefig(os.path.join(path, f"{metric}.png"))
+            model_stats.export(model_dir, *measures, plots=plots)
+
+            if plots:
+                for metric in model_stats:
+                    self.plot(metric_name=metric.name).savefig(
+                        os.path.join(path, f"{metric.name} comparison.png")
+                    )
 
     def plot(self, metric_name):
         try:
@@ -526,26 +719,38 @@ class ModelComparison:
                 )
             elif isinstance(metric, CurveMetric):
                 if metric_name == "roc_curve":
+                    try:
+                        from sklearn.metrics import roc_auc_score
+                    except ImportError:
+                        raise ImportError("sklearn is required for plotting ROC curves")
                     mean_fpr, mean_tpr = metric.mean
                     ax.plot(
-                        mean_fpr, mean_tpr, label=f"Model {model_idx} Mean ROC curve"
+                        mean_fpr,
+                        mean_tpr,
+                        label=f"{str(self.__model_stats[model_idx].model)} Mean ROC curve (AUC = {roc_auc_score(np.concatenate(self.__model_stats[model_idx].y_true), np.concatenate(self.__model_stats[model_idx].y_pred)):.2f})",
                     )
                 elif metric_name == "precision_recall_curve":
+                    try:
+                        from sklearn.metrics import average_precision_score
+                    except ImportError:
+                        raise ImportError(
+                            "sklearn is required for plotting Precision-Recall curves"
+                        )
                     mean_precision, mean_recall = metric.mean
                     ax.plot(
                         mean_recall,
                         mean_precision,
-                        label=f"Model {model_idx} Mean Precision-Recall curve",
+                        label=f"{model_idx} Mean Precision-Recall curve (AUC = {
+                            average_precision_score(np.concatenate(self.__model_stats[model_idx].y_true), np.concatenate(self.__model_stats[model_idx].y_pred)):.2f}",
                     )
                 else:
                     raise ValueError(
                         f"Plotting not supported for metric type {type(metric)}"
                     )
+            elif isinstance(metric, ImportanceMetric):
+                pass
             else:
-                raise ValueError(
-                    f"Plotting not supported for metric type {type(metric)}"
-                )
-
+                pass
         ax.set_title(f"Comparison of {metric_name}")
         ax.set_xlabel(
             "Split"
@@ -565,7 +770,6 @@ class ModelComparison:
                 else "True Positive Rate"
             )
         )
-        ax.legend(loc="best")
         ax.grid(True)
         return fig
 

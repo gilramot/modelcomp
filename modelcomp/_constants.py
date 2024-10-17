@@ -11,12 +11,20 @@ from sklearn.metrics import (
 import warnings
 import numpy as np
 
-__all__ = ["METRICS", "builtin_importance"]
+__all__ = [
+    "METRICS",
+    "SCORE_METRICS",
+    "CURVE_METRICS",
+    "IMPORTANCE_METRICS",
+    "shap_explainer",
+    "builtin_importance",
+]
 
 
-def shap_values(model, test, X_test):
+
+def shap_explainer(model, test, X_test, random_state=None):
     """
-    Gets the SHAP values of a trained model
+    Gets the SHAP explainer of a trained model
     :param model: The trained model
     :param test: The test data indices
     :param X_test: The test data
@@ -26,17 +34,20 @@ def shap_values(model, test, X_test):
         import shap
     except ImportError:
         raise ImportError(f"shap is required for feature importance calculation")
+    max_evals = 500
+    if X_test.shape[0] >= 250:
+        max_evals = X_test.shape[1] * 2 + 1
+        warnings.warn(
+            f"The number of samples in the test set is greater than 250. max_evals updated to {max_evals}")
     try:
-        explainer = shap.Explainer(model)
+        explainer = shap.Explainer(model, seed=random_state)
     except TypeError:
         warnings.warn(
             "Model is not callable by the SHAP Explainer. Using model.predict instead"
         )
-        explainer = shap.Explainer(model.predict, X_test)
-    shap_values = explainer.shap_values(X_test)
-    if shap_values.shape == 3 and shap_values.shape[2] > 2:
-        raise ValueError("The SHAP-modelcomp interopability does not currently support multiclassing.")
-    return np.flip(shap_values[:, :, 1])
+        explainer = shap.Explainer(model.predict, X_test, max_evals=max_evals, seed=random_state)
+    shap_values = explainer(X_test)
+    return shap_values
 
 
 def builtin_importance(model, attr=None):
@@ -78,13 +89,23 @@ def builtin_importance(model, attr=None):
     return None
 
 
-METRICS = {
+SCORE_METRICS = {
     "accuracy_score": accuracy_score,
     "precision_score": precision_score,
     "recall_score": recall_score,
     "f1_score": f1_score,
+    "roc_auc_score": roc_auc_score,
+    "average_precision_score": average_precision_score,
+}
+
+CURVE_METRICS = {
     "precision_recall_curve": precision_recall_curve,
     "roc_curve": roc_curve,
-    "builtin_importance": builtin_importance,
-    "shap_values": shap_values,
 }
+
+IMPORTANCE_METRICS = {
+    "builtin_importance": builtin_importance,
+    "shap_explainer": shap_explainer,
+}
+
+METRICS = {**SCORE_METRICS, **CURVE_METRICS, **IMPORTANCE_METRICS}
