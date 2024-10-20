@@ -43,12 +43,11 @@ class BaseMetric:
                 import matplotlib.pyplot as plt
             except ImportError:
                 raise ImportError("matplotlib is required for plotting")
-            if isinstance(self, CurveMetric):
-                self.plot().savefig(
-                    os.path.join(path, f"{self.name}.png")
-                )
-            else:
-                self.plot().savefig(os.path.join(path, f"{self.name}.png"))
+            fig = self.plot()
+            fig.savefig(
+                os.path.join(path, f"{self.name}.png")
+            )
+            pkl.dump(fig, open(os.path.join(path, f"{self.name}_fig.pkl"), "wb"))
             plt.close()
 
         for measure in measures:
@@ -153,13 +152,33 @@ class ScoreMetric(BaseMetric):
         return np.std(self.values)
 
     def plot(self):
-        import matplotlib.pyplot as plt
-
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError:
+            raise ImportError("matplotlib is required for plotting")
+        
+        try:
+            import seaborn as sns
+        except ImportError:
+            raise ImportError("seaborn is required for plotting swarmplots")
         fig, ax = plt.subplots()
-        ax.scatter([""] * len(self.values), self.values)
-        ax.set_xlabel("")
-        ax.set_title(f"{self.name} scatter plot")
-        ax.set_ylabel(self.name)
+
+        sns.swarmplot(data=self.values, ax=ax)
+        sns.boxplot(data=self.values, ax=ax)
+        # Add the metric means and stds as text
+        mean_value = self.mean
+        std_value = self.std
+        ax.legend(
+            [f"Mean: {mean_value:.2f} ± {std_value:.2f}"],
+            loc="upper right",
+            fontsize=8,
+            frameon=True,
+            fancybox=True,
+            framealpha=0.5,
+            borderpad=1
+        )
+        ax.set_title(self.name)
+        
         return fig
 
 
@@ -230,11 +249,11 @@ class CurveMetric(BaseMetric):
                 lw=2,
                 alpha=0.8,
             )
-            ax.set_title("ROC Curve")
+            ax.set_title(f"ROC Curve for {self._model_stats.model}")
             ax.set_xlabel("False Positive Rate")
             ax.set_ylabel("True Positive Rate")
             ax.legend(loc="lower right")
-            ax.grid(True)
+
         elif self.name == "precision_recall_curve":
             try:
                 from sklearn.metrics import average_precision_score
@@ -265,11 +284,11 @@ class CurveMetric(BaseMetric):
                 lw=2,
                 alpha=0.8,
             )
-            ax.set_title("Precision-Recall Curve")
+            ax.set_title(f"Precision-Recall Curve for {self._model_stats.model}")
             ax.set_xlabel("Recall")
             ax.set_ylabel("Precision")
             ax.legend(loc="lower left")
-            ax.grid(True)
+        ax.grid(True)
         return fig
 
 
@@ -320,7 +339,11 @@ class ImportanceMetric(BaseMetric):
                     self.__explainer, open(os.path.join(path, f"{self.name}.pkl"), "wb")
                 )
             if plots:
-                self.plot().savefig(os.path.join(path, f"{self.name}.png"))
+                fig = self.plot()
+                fig.savefig(
+                    os.path.join(path, f"{self.name}.png")
+                )
+                pkl.dump(fig, open(os.path.join(path, f"{self.name}_fig.pkl"), "wb"))
         else:
             pass
 
@@ -707,70 +730,119 @@ class ModelComparison:
         except ImportError:
             raise ImportError("matplotlib is required for plotting")
         fig, ax = plt.subplots()
-        for model_idx, model_stat in enumerate(self.__model_stats):
-            metric = getattr(model_stat, metric_name, None)
-            if metric is None:
-                raise ValueError(
+
+        metric = getattr(self.__model_stats[0], metric_name, None)
+        if isinstance(metric, ScoreMetric):
+            try:
+                import seaborn as sns
+            except ImportError:
+                raise ImportError("seaborn is required for plotting swarmplots")
+            
+            try:
+                import pandas as pd
+            except ImportError:
+                raise ImportError(f"pandas is required for plotting {metric_name}")
+            
+            # Prepare the data for seaborn
+            data = []
+            for model_idx, model_stat in enumerate(self.__model_stats):
+                metric = getattr(model_stat, metric_name, None)
+                if metric is None:
+                    raise ValueError(
                     f"Metric {metric_name} not found for model {model_idx}"
+                    )
+                model_name = model_stat.model.__class__.__name__
+                for value in metric.values:
+                    data.append([model_name, value])
+
+            df = pd.DataFrame(data, columns=["Model", "Value"])
+
+            # Create the swarmplot
+            sns.swarmplot(x="Model", y="Value", data=df, ax=ax)
+
+            # Create the boxplot
+            sns.boxplot(x="Model", y="Value", data=df, ax=ax)
+
+            # Add the metric means and stds as text
+            handles = []
+            for model_idx, model_stat in enumerate(self.__model_stats):
+                model_name = model_stat.model.__class__.__name__
+                mean_value = getattr(self.__model_stats[model_idx], metric_name).mean
+                std_value = getattr(self.__model_stats[model_idx], metric_name).std
+                handles.append(
+                    plt.Line2D(
+                        [0], [0], color="w", marker='o',
+                        markersize=10, label=f"{model_name}: {mean_value:.2f} ± {std_value:.2f}"
+                    )
                 )
-            if isinstance(metric, ScoreMetric):
-                ax.plot(
-                    metric.values, marker="o", linestyle="-", label=f"Model {model_idx}"
-                )
-            elif isinstance(metric, CurveMetric):
-                if metric_name == "roc_curve":
-                    try:
-                        from sklearn.metrics import roc_auc_score
-                    except ImportError:
-                        raise ImportError("sklearn is required for plotting ROC curves")
+            ax.legend(handles=handles, loc="upper right", fontsize=6, frameon=True, fancybox=True, framealpha=0.5, borderpad=1)
+
+        elif isinstance(metric, CurveMetric):
+            ax.grid(True)
+            if metric_name == "roc_curve":
+                try:
+                    from sklearn.metrics import roc_auc_score
+                except ImportError:
+                    raise ImportError("sklearn is required for plotting ROC curves")
+                
+                for model_idx, model_stat in enumerate(self.__model_stats):
+                    metric = getattr(model_stat, metric_name, None)
+                    if metric is None:
+                        raise ValueError(
+                            f"Metric {metric_name} not found for model {model_idx}"
+                        )
+                    model_name = model_stat.model.__class__.__name__
                     mean_fpr, mean_tpr = metric.mean
                     ax.plot(
-                        mean_fpr,
-                        mean_tpr,
-                        label=f"{str(self.__model_stats[model_idx].model)} Mean ROC curve (AUC = {roc_auc_score(np.concatenate(self.__model_stats[model_idx].y_true), np.concatenate(self.__model_stats[model_idx].y_pred)):.2f})",
+                    mean_fpr,
+                    mean_tpr,
+                    label=f"{model_name} (AUC = {roc_auc_score(np.concatenate(self.__model_stats[model_idx].y_true), np.concatenate(self.__model_stats[model_idx].y_pred)):.2f})",
                     )
-                elif metric_name == "precision_recall_curve":
-                    try:
-                        from sklearn.metrics import average_precision_score
-                    except ImportError:
-                        raise ImportError(
-                            "sklearn is required for plotting Precision-Recall curves"
+                
+                ax.set_xlabel("False Positive Rate")
+                ax.set_ylabel("True Positive Rate")
+            
+            elif metric_name == "precision_recall_curve":
+                try:
+                    from sklearn.metrics import average_precision_score
+                except ImportError:
+                    raise ImportError(
+                    "sklearn is required for plotting Precision-Recall curves"
+                    )
+                
+                for model_idx, model_stat in enumerate(self.__model_stats):
+                    metric = getattr(model_stat, metric_name, None)
+                    if metric is None:
+                        raise ValueError(
+                            f"Metric {metric_name} not found for model {model_idx}"
                         )
+                    model_name = model_stat.model.__class__.__name__
                     mean_precision, mean_recall = metric.mean
                     ax.plot(
-                        mean_recall,
-                        mean_precision,
-                        label=f"{model_idx} Mean Precision-Recall curve (AUC = {
-                            average_precision_score(np.concatenate(self.__model_stats[model_idx].y_true), np.concatenate(self.__model_stats[model_idx].y_pred)):.2f}",
+                    mean_recall,
+                    mean_precision,
+                    label=f"{model_name} (AUC = {average_precision_score(np.concatenate(self.__model_stats[model_idx].y_true), np.concatenate(self.__model_stats[model_idx].y_pred)):.2f})",
                     )
-                else:
-                    raise ValueError(
-                        f"Plotting not supported for metric type {type(metric)}"
-                    )
-            elif isinstance(metric, ImportanceMetric):
-                pass
+
+                ax.set_xlabel("Recall")
+                ax.set_ylabel("Precision")
             else:
-                pass
-        ax.set_title(f"Comparison of {metric_name}")
-        ax.set_xlabel(
-            "Split"
-            if isinstance(metric, ScoreMetric)
-            else (
-                "Recall"
-                if metric_name == "precision_recall_curve"
-                else "False Positive Rate"
-            )
-        )
-        ax.set_ylabel(
-            metric_name
-            if isinstance(metric, ScoreMetric)
-            else (
-                "Precision"
-                if metric_name == "precision_recall_curve"
-                else "True Positive Rate"
-            )
-        )
-        ax.grid(True)
+                raise ValueError(
+                    f"Plotting not supported for metric type {type(metric)}"
+                )
+            
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+            ax.legend()
+        
+        elif isinstance(metric, ImportanceMetric):
+            pass
+        
+        else:
+            pass
+
+        ax.set_title(f"Comparison of {metric_name} between models")
+
         return fig
 
     @property
