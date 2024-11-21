@@ -249,7 +249,7 @@ class CurveMetric(BaseMetric):
                 lw=2,
                 alpha=0.8,
             )
-            ax.set_title(f"ROC Curve for {self._model_stats.model}")
+            ax.set_title(f"ROC Curve for {self._model_stats.model.__class__.__name__}")
             ax.set_xlabel("False Positive Rate")
             ax.set_ylabel("True Positive Rate")
             ax.legend(loc="lower right")
@@ -284,7 +284,7 @@ class CurveMetric(BaseMetric):
                 lw=2,
                 alpha=0.8,
             )
-            ax.set_title(f"Precision-Recall Curve for {self._model_stats.model}")
+            ax.set_title(f"Precision-Recall Curve for {self._model_stats.model.__class__.__name__}")
             ax.set_xlabel("Recall")
             ax.set_ylabel("Precision")
             ax.legend(loc="lower left")
@@ -415,11 +415,11 @@ class ImportanceMetric(BaseMetric):
 class MetricFactory:
     @staticmethod
     def create_metric(name, model_stats, feature_names=None):
-        if name in ["accuracy_score", "precision_score", "recall_score", "f1_score"]:
+        if name in _constants.SCORE_METRICS:
             return ScoreMetric(name, model_stats)
-        elif name in ["precision_recall_curve", "roc_curve"]:
+        elif name in _constants.CURVE_METRICS:
             return CurveMetric(name, model_stats)
-        elif name in ["builtin_importance", "shap_explainer"]:
+        elif name in _constants.IMPORTANCE_METRICS:
             return ImportanceMetric(name, model_stats, feature_names)
         else:
             warnings.warn(f"Metric {name} not supported")
@@ -720,9 +720,12 @@ class ModelComparison:
 
             if plots:
                 for metric in model_stats:
-                    self.plot(metric_name=metric.name).savefig(
-                        os.path.join(path, f"{metric.name} comparison.png")
+                    fig = self.plot(metric_name=metric.name)
+                    fig.savefig(
+                        os.path.join(model_dir, f"{metric.name}_comparison_fig.png")
                     )
+                    pkl.dump(fig, open(os.path.join(model_dir, f"{metric.name}_comparison_fig.pkl"), "wb"))
+
 
     def plot(self, metric_name):
         try:
@@ -793,6 +796,7 @@ class ModelComparison:
                         )
                     model_name = model_stat.model.__class__.__name__
                     mean_fpr, mean_tpr = metric.mean
+                    std_fpr, std_tpr = metric.std
                     ax.plot(
                     mean_fpr,
                     mean_tpr,
