@@ -714,7 +714,7 @@ class ModelComparison:
                         model_dir, "fit_models", f"split_{split_index}.pkl"
                     )
                     with open(model_pkl_path, "wb") as model_pkl_file:
-                        pickle.dump(model_stats.fit_models[split_index], model_pkl_file)
+                        pkl.dump(model_stats.fit_models[split_index], model_pkl_file)
 
             model_stats.export(model_dir, *measures, plots=plots)
 
@@ -722,9 +722,10 @@ class ModelComparison:
                 for metric in model_stats:
                     fig = self.plot(metric_name=metric.name)
                     fig.savefig(
-                        os.path.join(model_dir, f"{metric.name}_comparison_fig.png")
+                        os.path.join(path, f"{metric.name}_comparison_fig.png")
                     )
-                    pkl.dump(fig, open(os.path.join(model_dir, f"{metric.name}_comparison_fig.pkl"), "wb"))
+                    _sysutils.check_dir_write(path, force_create=True)
+                    pkl.dump(fig, open(os.path.join(path, f"{metric.name}_comparison_fig.pkl"), "wb"))
 
 
     def plot(self, metric_name):
@@ -796,7 +797,6 @@ class ModelComparison:
                         )
                     model_name = model_stat.model.__class__.__name__
                     mean_fpr, mean_tpr = metric.mean
-                    std_fpr, std_tpr = metric.std
                     ax.plot(
                     mean_fpr,
                     mean_tpr,
